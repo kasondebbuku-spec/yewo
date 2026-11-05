@@ -1,5 +1,7 @@
 import * as Location from 'expo-location';
-import { DEMO_LOCATION, DEMO_POINTS } from './config';
+import { Platform } from 'react-native';
+import { DEMO_POINTS } from './config';
+import { isDemo } from './demo';
 import type { Point } from './types';
 
 async function ensurePermission() {
@@ -9,9 +11,9 @@ async function ensurePermission() {
   }
 }
 
-// Your current position, or a fixed demo point when demo mode is on.
-export async function getCurrentPoint(demoFallback: Point = DEMO_POINTS.customerHome): Promise<Point> {
-  if (DEMO_LOCATION) return { lat: demoFallback.lat, lng: demoFallback.lng };
+// Your current position, or a fixed demo point when the demo switch is on.
+export async function getCurrentPoint(demoPoint: Point = DEMO_POINTS.customerHome): Promise<Point> {
+  if (isDemo()) return { lat: demoPoint.lat, lng: demoPoint.lng };
   await ensurePermission();
   const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
   return { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -25,4 +27,17 @@ export async function watchPoint(onMove: (p: Point) => void): Promise<() => void
     (pos) => onMove({ lat: pos.coords.latitude, lng: pos.coords.longitude })
   );
   return () => sub.remove();
+}
+
+// Best-effort street address for a point ("12 Kabulonga Road, Kabulonga"). Empty if unknown.
+export async function describePoint(p: Point): Promise<string> {
+  if (Platform.OS === 'web') return '';
+  try {
+    const [place] = await Location.reverseGeocodeAsync({ latitude: p.lat, longitude: p.lng });
+    if (!place) return '';
+    const street = [place.streetNumber, place.street].filter(Boolean).join(' ');
+    return [street || place.name, place.district || place.subregion].filter(Boolean).join(', ');
+  } catch {
+    return '';
+  }
 }

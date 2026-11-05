@@ -53,11 +53,22 @@ The login screen has buttons that fill these in (development builds only).
 window. Book "Home cleaning", accept it as Mary, tap "I'm on my way" (the customer sees the ETA
 drop), check in, check out, then pay and rate as the customer.
 
-### Demo mode
+### Real GPS, maps and demo mode
 
-`EXPO_PUBLIC_DEMO_LOCATION` is on by default: everyone is placed in Kabulonga, and the worker
-"drives" to the customer when on the way, so you can demo from anywhere. For real GPS, put
-`EXPO_PUBLIC_DEMO_LOCATION=false` in `mobile/.env`.
+The app uses the phone's **real GPS** by default:
+- **Booking:** a map opens at your location. Drag it so the pin sits on your gate. The active zones are shaded, and the
+  button stays off until the pin is inside one. The address fills in from the map (edit it and add a landmark).
+- **Tracking:** once a worker accepts, the customer sees a live map with the worker moving toward the house.
+  The worker sees the job on a map and has a Directions button.
+- **Worker online:** while online, the worker's position updates as they move, so dispatch always uses where they really are.
+
+**Demo location switch** (development builds only, on the login and home screens): when on,
+everyone is placed in Kabulonga and the worker "drives" to the customer when on the way. Use it to
+demo from anywhere, or when you're testing outside the pilot zones.
+
+Maps use `react-native-maps` (Google Maps on Android). Expo Go needs no setup. A Play Store build will
+need a Google Maps API key in `app.json` (see the Expo "MapView" docs). The web version shows coordinates
+in place of the map.
 
 ## How it works
 
@@ -87,7 +98,7 @@ before accepting. The admin screen shows paid bookings value, commission and ave
 | Sign-up/login (phone + PIN) for customers and workers | SMS OTP to confirm phone numbers |
 | Worker NRC + agency verification by admin | NRC photo upload |
 | Zone detection, wave dispatch, accept/decline/drop job | Push notifications when the app is closed |
-| Live worker location and ETA | Map view |
+| Live worker location, ETA and maps | Turn-by-turn route on the map |
 | GPS check-in/check-out | Scheduled (later-today) bookings |
 | Mobile Money flow (**mocked**) | Real MTN MoMo / Airtel Money APIs |
 | Two-way ratings, earnings, admin stats | Worker payouts, disputes, SOS button |

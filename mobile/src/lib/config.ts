@@ -13,10 +13,7 @@ function defaultApiUrl() {
 
 export const API_URL = defaultApiUrl();
 
-// Demo mode pretends everyone is in Kabulonga, so you can demo the app from anywhere.
-// Set EXPO_PUBLIC_DEMO_LOCATION=false to use real GPS.
-export const DEMO_LOCATION = process.env.EXPO_PUBLIC_DEMO_LOCATION !== 'false';
-
+// Fixed points used when the demo location switch is on (see lib/demo.ts).
 export const DEMO_POINTS = {
   customerHome: { lat: -15.4135, lng: 28.3375, address: 'Plot 12, Kabulonga Road' },
   workerStart: { lat: -15.405, lng: 28.33 },

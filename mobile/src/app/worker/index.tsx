@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Switch, Text, View } from 'react-native';
 import { router, Stack, useFocusEffect } from 'expo-router';
 import { Badge, Button, Card, colors, ErrorText, H1, H2, kwacha, Muted, Row, Screen } from '@/components/ui';
@@ -6,8 +6,10 @@ import { JobSummary } from '@/components/JobSummary';
 import { LogoutButton } from '@/components/LogoutButton';
 import { useAuth, useSocketEvent } from '@/lib/auth';
 import { api, errorMessage } from '@/lib/api';
-import { DEMO_LOCATION, DEMO_POINTS } from '@/lib/config';
-import { getCurrentPoint } from '@/lib/location';
+import { DemoToggle } from '@/components/DemoToggle';
+import { DEMO_POINTS } from '@/lib/config';
+import { useDemo } from '@/lib/demo';
+import { getCurrentPoint, watchPoint } from '@/lib/location';
 import { OPEN_STATUSES, type Job, type Offer } from '@/lib/types';
 
 type Earnings = Record<'today' | 'thisWeek' | 'allTime', { jobs: number; amount: number }>;
@@ -20,6 +22,7 @@ export default function WorkerHome() {
   const [earnings, setEarnings] = useState<Earnings | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const demo = useDemo();
 
   const load = useCallback(() => {
     refresh().catch(() => {});
@@ -64,8 +67,24 @@ export default function WorkerHome() {
     }
   }
 
-  if (!worker) return null;
   const active = jobs.find((j) => OPEN_STATUSES.includes(j.status));
+  const waiting = !!worker?.online && !active;
+
+  // While online and waiting for jobs, keep our position fresh so dispatch finds us.
+  useEffect(() => {
+    if (!waiting) return;
+    const send = (p: { lat: number; lng: number }) =>
+      api('/workers/me/location', { method: 'POST', body: p }).catch(() => {});
+    if (demo) {
+      send(DEMO_POINTS.workerStart);
+      return;
+    }
+    let stop: (() => void) | undefined;
+    watchPoint(send).then((s) => (stop = s)).catch((e) => setError(errorMessage(e)));
+    return () => stop?.();
+  }, [waiting, demo]);
+
+  if (!worker) return null;
 
   return (
     <Screen>
@@ -76,13 +95,13 @@ export default function WorkerHome() {
         <Card style={{ backgroundColor: colors.warnSoft, borderColor: '#FDE68A' }}>
           <H2>Verification in progress</H2>
           <Muted>
-            We're checking your NRC with {worker.agency.name}. You can go online and receive jobs once you're verified.
+            We’re checking your NRC with {worker.agency.name}. You can go online and receive jobs once you’re verified.
           </Muted>
         </Card>
       )}
       {worker.verificationStatus === 'rejected' && (
         <Card style={{ backgroundColor: colors.dangerSoft, borderColor: '#FECACA' }}>
-          <H2>We couldn't verify you</H2>
+          <H2>We couldn’t verify you</H2>
           <Muted>Please contact {worker.agency.name} or Yewo support.</Muted>
         </Card>
       )}
@@ -101,7 +120,7 @@ export default function WorkerHome() {
               trackColor={{ true: colors.success }}
             />
           </Row>
-          {DEMO_LOCATION && <Badge tone="muted" label="Demo location: Kabulonga" />}
+          <DemoToggle />
         </Card>
       )}
       <ErrorText>{error}</ErrorText>

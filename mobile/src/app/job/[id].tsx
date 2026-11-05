@@ -8,11 +8,15 @@ import {
 import { statusLabel } from '@/components/JobSummary';
 import { useAuth, useSocketEvent } from '@/lib/auth';
 import { api, errorMessage } from '@/lib/api';
-import { DEMO_LOCATION, DEMO_POINTS } from '@/lib/config';
+import { JobMap } from '@/components/Map';
+import { DEMO_POINTS } from '@/lib/config';
+import { isDemo } from '@/lib/demo';
 import { getCurrentPoint, watchPoint } from '@/lib/location';
 import type { Job, Point } from '@/lib/types';
 
-type LiveLocation = { jobId: number; distanceKm: number; etaMinutes: number };
+type LiveLocation = { jobId: number; lat: number; lng: number; distanceKm: number; etaMinutes: number };
+
+const ON_JOB = ['accepted', 'en_route', 'in_progress'];
 
 export default function JobScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -87,14 +91,19 @@ function CustomerView({ job, live, act, busy }: { job: Job; live: LiveLocation |
   const [payPhone, setPayPhone] = useState(user?.phone ?? '');
   const eta = live?.etaMinutes ?? job.worker?.etaMinutes;
   const distance = live?.distanceKm ?? job.worker?.distanceKm;
+  const workerPoint = live ? { lat: live.lat, lng: live.lng } : job.worker?.location ?? null;
 
   return (
     <>
+      {job.worker && ON_JOB.includes(job.status) && (
+        <JobMap home={job.location} worker={workerPoint} workerLabel={job.worker.name} />
+      )}
+
       {job.status === 'searching' && (
         <Card style={{ alignItems: 'center', paddingVertical: 28 }}>
           <ActivityIndicator size="large" color={colors.primary} />
           <H2>Finding a verified worker near you…</H2>
-          <Muted style={{ textAlign: 'center' }}>We've sent your request to the closest available workers.</Muted>
+          <Muted style={{ textAlign: 'center' }}>We’ve sent your request to the closest available workers.</Muted>
         </Card>
       )}
 
@@ -166,7 +175,7 @@ function CustomerView({ job, live, act, busy }: { job: Job; live: LiveLocation |
           )}
           {['unpaid', 'failed'].includes(job.paymentStatus) && (
             <>
-              {job.paymentStatus === 'failed' && <ErrorText>The payment didn't go through. Please try again.</ErrorText>}
+              {job.paymentStatus === 'failed' && <ErrorText>The payment didn’t go through. Please try again.</ErrorText>}
               <Field label="MTN or Airtel number" value={payPhone} onChangeText={setPayPhone} keyboardType="phone-pad" />
               <Button
                 title={`Pay ${kwacha(job.total)} with Mobile Money`}
@@ -200,10 +209,18 @@ function CustomerView({ job, live, act, busy }: { job: Job; live: LiveLocation |
 // ------------------------------------------------------------------ worker side
 function WorkerView({ job, act, busy }: { job: Job; act: ActFn; busy: string | null }) {
   useShareLocation(job);
+  const [gpsError, setGpsError] = useState('');
 
   async function checkIn() {
     // In demo mode we pretend the worker is standing at the customer's gate.
-    const here: Point = DEMO_LOCATION ? job.location : await getCurrentPoint();
+    setGpsError('');
+    let here: Point;
+    try {
+      here = isDemo() ? job.location : await getCurrentPoint();
+    } catch (e) {
+      setGpsError(errorMessage(e));
+      return;
+    }
     await act('check-in', 'check-in', here);
   }
 
@@ -211,6 +228,9 @@ function WorkerView({ job, act, busy }: { job: Job; act: ActFn; busy: string | n
 
   return (
     <>
+      {ON_JOB.includes(job.status) && (
+        <JobMap home={job.location} worker={job.worker?.location ?? null} workerLabel="You" showMe={!isDemo()} />
+      )}
       <Card>
         <H2>{job.customer?.name}</H2>
         <Muted>{job.address}</Muted>
@@ -241,6 +261,7 @@ function WorkerView({ job, act, busy }: { job: Job; act: ActFn; busy: string | n
       {['accepted', 'en_route'].includes(job.status) && (
         <>
           <Button title="I've arrived · Check in" variant={job.status === 'en_route' ? 'primary' : 'secondary'} onPress={checkIn} loading={busy === 'check-in'} />
+          <ErrorText>{gpsError}</ErrorText>
           <Button title="I can't make it" variant="danger" onPress={async () => (await act('release', 'release')) && router.replace('/')} loading={busy === 'release'} />
         </>
       )}
@@ -274,7 +295,7 @@ function useShareLocation(job: Job) {
     if (!tracking) return;
     const send = (p: Point) => api('/workers/me/location', { method: 'POST', body: p }).catch(() => {});
 
-    if (DEMO_LOCATION) {
+    if (isDemo()) {
       // Demo: glide from a nearby start point to the customer's door.
       if (job.status !== 'en_route') return;
       const from = DEMO_POINTS.workerStart;

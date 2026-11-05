@@ -1,21 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Switch, Text } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Button, Card, colors, ErrorText, Field, H1, kwacha, LineItem, Muted, Row, Screen } from '@/components/ui';
+import { Badge, Button, Card, colors, ErrorText, Field, H1, kwacha, LineItem, Loading, Muted, Row, Screen } from '@/components/ui';
+import { PickLocationMap, type Zone } from '@/components/Map';
 import { api, errorMessage } from '@/lib/api';
-import { DEMO_LOCATION, DEMO_POINTS } from '@/lib/config';
-import { getCurrentPoint } from '@/lib/location';
+import { DEMO_POINTS } from '@/lib/config';
+import { isDemo } from '@/lib/demo';
+import { describePoint, getCurrentPoint } from '@/lib/location';
 import type { Job, Point, Service } from '@/lib/types';
 
 const URGENCY_FEE = 30; // matches backend config.urgencyFee
 
+type ZoneCheck = { zone: { name: string; active: boolean } | null; available: boolean };
+
 export default function Book() {
   const { serviceId } = useLocalSearchParams<{ serviceId: string }>();
   const [service, setService] = useState<Service | null>(null);
-  const [address, setAddress] = useState(DEMO_LOCATION ? DEMO_POINTS.customerHome.address : '');
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [start, setStart] = useState<Point | null>(null);
+  const [point, setPoint] = useState<Point | null>(null);
+  const [zoneCheck, setZoneCheck] = useState<ZoneCheck | null>(null);
+  // In demo mode the address is pre-filled, so we don't overwrite it from the map.
+  const [address, setAddress] = useState(() => (isDemo() ? DEMO_POINTS.customerHome.address : ''));
+  const addressTouched = useRef(isDemo());
   const [notes, setNotes] = useState('');
   const [urgent, setUrgent] = useState(false);
-  const [point, setPoint] = useState<Point | null>(null);
+  const [gpsError, setGpsError] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -23,8 +33,35 @@ export default function Book() {
     api<{ services: Service[] }>('/services').then((r) =>
       setService(r.services.find((s) => s.id === Number(serviceId)) ?? null)
     );
-    getCurrentPoint().then(setPoint).catch((e) => setError(e.message));
+    api<{ zones: Zone[] }>('/zones').then((r) => setZones(r.zones)).catch(() => {});
+
+    getCurrentPoint()
+      .then(setStart)
+      .catch((e) => {
+        // No GPS: start the map in Kabulonga so the customer can still drop a pin.
+        setGpsError(e.message);
+        setStart(DEMO_POINTS.customerHome);
+      });
   }, [serviceId]);
+
+  // Each time the pin settles: is Yewo available here, and what's the address?
+  useEffect(() => {
+    if (!point) return;
+    let stale = false;
+    const timer = setTimeout(async () => {
+      api<ZoneCheck>(`/zones/detect?lat=${point.lat}&lng=${point.lng}`)
+        .then((r) => !stale && setZoneCheck(r))
+        .catch(() => {});
+      if (!addressTouched.current) {
+        const text = await describePoint(point);
+        if (!stale && text && !addressTouched.current) setAddress(text);
+      }
+    }, 400);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [point]);
 
   async function submit() {
     if (!service || !point) return;
@@ -42,20 +79,49 @@ export default function Book() {
     }
   }
 
-  if (!service) return <Screen><Muted>Loading…</Muted></Screen>;
+  if (!service || !start) return <Loading />;
   const total = service.base_price + (urgent ? URGENCY_FEE : 0);
+  const available = !!zoneCheck?.available;
 
   return (
     <Screen>
       <H1>{service.name}</H1>
       <Muted>{service.description}</Muted>
 
+      <Muted>Move the map so the pin is on your gate.</Muted>
+      <PickLocationMap
+        initial={start}
+        zones={zones}
+        onChange={setPoint}
+        onLocate={async () => {
+          const p = await getCurrentPoint();
+          setGpsError('');
+          return p;
+        }}
+      />
+      {gpsError ? <ErrorText>{gpsError}</ErrorText> : null}
+      {zoneCheck && (
+        <Badge
+          tone={available ? 'success' : 'warn'}
+          label={
+            available
+              ? `✓ ${zoneCheck.zone?.name}: workers available`
+              : zoneCheck.zone
+                ? `${zoneCheck.zone.name} is coming soon`
+                : 'Outside our service area. Move the pin into a shaded zone.'
+          }
+        />
+      )}
+
       <Field
         label="Address"
         value={address}
-        onChangeText={setAddress}
+        onChangeText={(t) => {
+          addressTouched.current = true;
+          setAddress(t);
+        }}
         placeholder="House number, street, landmark"
-        hint={point ? `📍 Using your ${DEMO_LOCATION ? 'demo ' : ''}location for matching` : 'Getting your location…'}
+        hint="Add a landmark the worker can recognise (e.g. blue gate opposite the church)."
       />
       <Field
         label="Notes for the worker (optional)"
@@ -82,7 +148,12 @@ export default function Book() {
       </Card>
 
       <ErrorText>{error}</ErrorText>
-      <Button title={`Request a worker · ${kwacha(total)}`} onPress={submit} loading={loading} disabled={!address || !point} />
+      <Button
+        title={`Request a worker · ${kwacha(total)}`}
+        onPress={submit}
+        loading={loading}
+        disabled={!address || !point || !available}
+      />
     </Screen>
   );
 }

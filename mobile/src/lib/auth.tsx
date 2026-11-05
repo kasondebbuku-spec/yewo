@@ -1,6 +1,6 @@
 // Login state + the live connection to the server, shared by every screen.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { api, setApiToken } from './api';
 import { API_URL } from './config';
@@ -24,7 +24,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
 
   const startSession = useCallback(async (t: string, u: User) => {
     setApiToken(t);
@@ -54,15 +53,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // One live connection per login.
+  const socket = useMemo<Socket | null>(
+    () => (token ? io(API_URL, { auth: { token }, transports: ['websocket'], autoConnect: false }) : null),
+    [token]
+  );
   useEffect(() => {
-    if (!token) return;
-    const s = io(API_URL, { auth: { token }, transports: ['websocket'] });
-    setSocket(s);
+    if (!socket) return;
+    socket.connect();
     return () => {
-      s.close();
-      setSocket(null);
+      socket.close();
     };
-  }, [token]);
+  }, [socket]);
 
   const login = useCallback(
     async (phone: string, pin: string) => {
@@ -108,11 +109,10 @@ export function useAuth() {
 // Run `handler` whenever the server pushes `event`.
 export function useSocketEvent<T>(event: string, handler: (data: T) => void) {
   const { socket } = useAuth();
-  const ref = useRef(handler);
-  ref.current = handler;
+  const onEvent = useEffectEvent(handler);
   useEffect(() => {
     if (!socket) return;
-    const fn = (data: T) => ref.current(data);
+    const fn = (data: T) => onEvent(data);
     socket.on(event, fn);
     return () => {
       socket.off(event, fn);

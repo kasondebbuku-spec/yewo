@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Button, Card, colors, ErrorText, Field, Muted, Row, Screen } from '@/components/ui';
+import { DemoToggle } from '@/components/DemoToggle';
 import { useAuth } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
 
@@ -70,6 +71,7 @@ export default function Welcome() {
               />
             ))}
           </Row>
+          <DemoToggle />
         </Card>
       )}
     </Screen>

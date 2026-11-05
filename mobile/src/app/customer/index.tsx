@@ -6,7 +6,8 @@ import { JobSummary } from '@/components/JobSummary';
 import { LogoutButton } from '@/components/LogoutButton';
 import { useAuth, useSocketEvent } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { DEMO_LOCATION } from '@/lib/config';
+import { DemoToggle } from '@/components/DemoToggle';
+import { useDemo } from '@/lib/demo';
 import { getCurrentPoint } from '@/lib/location';
 import { OPEN_STATUSES, type Job, type Service } from '@/lib/types';
 
@@ -18,6 +19,7 @@ export default function CustomerHome() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [zone, setZone] = useState<ZoneCheck | null>(null);
   const [zoneError, setZoneError] = useState('');
+  const demo = useDemo();
 
   const loadJobs = useCallback(() => {
     api<{ jobs: Job[] }>('/jobs').then((r) => setJobs(r.jobs)).catch(() => {});
@@ -25,11 +27,18 @@ export default function CustomerHome() {
 
   useEffect(() => {
     api<{ services: Service[] }>('/services').then((r) => setServices(r.services)).catch(() => {});
+  }, []);
+
+  // Re-check "is Yewo available here?" whenever the demo switch changes.
+  useEffect(() => {
     getCurrentPoint()
       .then((p) => api<ZoneCheck>(`/zones/detect?lat=${p.lat}&lng=${p.lng}`))
-      .then(setZone)
+      .then((z) => {
+        setZone(z);
+        setZoneError('');
+      })
       .catch((e) => setZoneError(e.message));
-  }, []);
+  }, [demo]);
 
   useFocusEffect(loadJobs);
   useSocketEvent<Job>('job:update', loadJobs);
@@ -54,10 +63,10 @@ export default function CustomerHome() {
                   : '📍 Yewo is not in your area yet'
             }
           />
-          {DEMO_LOCATION && <Badge tone="muted" label="Demo location" />}
         </Row>
       )}
       {zoneError ? <Muted>{zoneError}</Muted> : null}
+      <DemoToggle />
 
       {active && (
         <>
