@@ -5,7 +5,7 @@ import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import { colors } from './ui';
 import type { Point } from '@/lib/types';
 
-export type Zone = { id: number; name: string; lat: number; lng: number; radius_km: number; active: boolean };
+export type Zone = { id: number; name: string; lat: number; lng: number; radiusKm: number; active: boolean };
 
 const regionFor = (p: Point, delta = 0.008): Region => ({
   latitude: p.lat,
@@ -55,7 +55,7 @@ export function PickLocationMap({
             <Circle
               key={z.id}
               center={coord(z)}
-              radius={z.radius_km * 1000}
+              radius={z.radiusKm * 1000}
               strokeColor="rgba(15,118,110,0.6)"
               fillColor="rgba(15,118,110,0.08)"
             />

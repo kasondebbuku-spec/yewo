@@ -6,7 +6,11 @@ import { pushToUser } from './push.js';
 import { maskNrc } from './validation.js';
 import { forbidden, notFound } from './errors.js';
 
-export const ACTIVE_STATUSES = ['accepted', 'en_route', 'in_progress'];
+import { TRACKING_STATUSES } from './domain/jobLifecycle.js';
+import { round1 } from './domain/money.js';
+
+export { ACTIVE_STATUSES } from './domain/jobLifecycle.js';
+export { round1, round2 } from './domain/money.js';
 
 export function loadJob(id) {
   const job = getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(Number(id));
@@ -27,7 +31,7 @@ export function workerProfile(workerId, { fullNrc = false } = {}) {
   const w = getDb()
     .prepare(
       `SELECT u.id, u.name, u.phone, w.nrc, w.verification_status, w.verification_note, w.rating_avg, w.rating_count,
-              w.jobs_completed, w.lat, w.lng, w.location_at, w.is_online, w.skills,
+              w.jobs_completed, w.agency_confirmed_at, w.lat, w.lng, w.location_at, w.is_online, w.skills,
               a.id AS agency_id, a.name AS agency_name, a.phone AS agency_phone
          FROM users u
          JOIN workers w ON w.user_id = u.id
@@ -45,6 +49,7 @@ export function workerProfile(workerId, { fullNrc = false } = {}) {
     verified: w.verification_status === 'verified',
     verificationNote: w.verification_note,
     agency: { id: w.agency_id, name: w.agency_name, phone: w.agency_phone },
+    agencyConfirmed: !!w.agency_confirmed_at,
     rating: Math.round(w.rating_avg * 10) / 10,
     ratingCount: w.rating_count,
     jobsCompleted: w.jobs_completed,
@@ -69,7 +74,7 @@ export function jobView(job, viewer) {
   if (job.worker_id) {
     worker = workerProfile(job.worker_id, { fullNrc: viewer.role === 'admin' });
     delete worker.skills;
-    const tracking = ['accepted', 'en_route'].includes(job.status) && worker.location;
+    const tracking = TRACKING_STATUSES.includes(job.status) && worker.location;
     worker.distanceKm = tracking ? round1(distanceKm(worker.location, job)) : null;
     worker.etaMinutes = tracking ? etaMinutes(worker.distanceKm) : null;
   }
@@ -95,6 +100,7 @@ export function jobView(job, viewer) {
     customerRating: ratings.find((r) => r.from_user === job.customer_id) ?? null,
     workerRating: ratings.find((r) => r.from_user === job.worker_id) ?? null,
     checkInDistanceM: job.check_in_distance_m,
+    scheduledFor: job.scheduled_for,
     createdAt: job.created_at,
     acceptedAt: job.accepted_at,
     enRouteAt: job.en_route_at,
@@ -127,6 +133,7 @@ const JOB_PUSHES = {
   en_route: (j, w) => ({ to: 'customer', title: `${w} is on the way`, body: 'Open Yewo to follow them live.' }),
   checked_in: (j, w) => ({ to: 'customer', title: `${w} has arrived`, body: 'They checked in at your address.' }),
   completed: (j, w) => ({ to: 'customer', title: 'Job finished', body: `Pay K${j.total} with Mobile Money and rate ${w}.` }),
+  scheduled_start: (j) => ({ to: 'customer', title: 'Finding your worker', body: `It's almost time for your ${j.service.name} booking. We're finding a verified worker nearby.` }),
   no_workers: () => ({ to: 'customer', title: 'No one was free just now', body: 'Open Yewo to try again.' }),
   released: () => ({ to: 'customer', title: 'Finding you another worker', body: "Your worker can't make it. We're looking for someone else nearby." }),
   cancelled: (j) => ({ to: 'worker', title: 'Booking cancelled', body: `The customer cancelled the ${j.service.name} job.` }),
@@ -149,5 +156,3 @@ export function notifyJob(jobId, event) {
   if (userId) pushToUser(userId, { title: msg.title, body: msg.body, data: { url: `/job/${job.id}` } });
 }
 
-export const round1 = (n) => Math.round(n * 10) / 10;
-export const round2 = (n) => Math.round(n * 100) / 100;

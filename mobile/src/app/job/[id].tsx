@@ -12,6 +12,9 @@ import { JobMap } from '@/components/Map';
 import { DEMO_POINTS } from '@/lib/config';
 import { isDemo } from '@/lib/demo';
 import { getCurrentPoint, watchPoint } from '@/lib/location';
+import { EmergencyButton } from '@/components/EmergencyButton';
+import { ReportProblem } from '@/components/ReportProblem';
+import { formatDay, formatTime, formatWhen } from '@/lib/time';
 import type { Job, Point } from '@/lib/types';
 
 type LiveLocation = { jobId: number; lat: number; lng: number; distanceKm: number; etaMinutes: number };
@@ -71,7 +74,9 @@ export default function JobScreen() {
         <Muted>{job.zone.name}</Muted>
       </Row>
 
-      {isWorker ? (
+      {user.role === 'admin' ? (
+        <StaffView job={job} />
+      ) : isWorker ? (
         <WorkerView job={job} act={act} busy={busy} />
       ) : (
         <CustomerView job={job} live={live} act={act} busy={busy} />
@@ -97,6 +102,18 @@ function CustomerView({ job, live, act, busy }: { job: Job; live: LiveLocation |
     <>
       {job.worker && ON_JOB.includes(job.status) && (
         <JobMap home={job.location} worker={workerPoint} workerLabel={job.worker.name} />
+      )}
+
+      {job.status === 'scheduled' && job.scheduledFor && (
+        <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
+          <Text style={{ fontSize: 15, color: colors.muted }}>Booked for</Text>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: colors.text }}>{formatTime(job.scheduledFor)}</Text>
+          <H2>{formatDay(job.scheduledFor)}</H2>
+          <Muted style={{ textAlign: 'center' }}>
+            We’ll start finding a verified worker shortly before, and let you know who is coming.
+          </Muted>
+          <Muted style={{ textAlign: 'center' }}>{job.address}</Muted>
+        </Card>
       )}
 
       {job.status === 'searching' && (
@@ -196,7 +213,10 @@ function CustomerView({ job, live, act, busy }: { job: Job; live: LiveLocation |
         />
       )}
 
-      {['searching', 'accepted', 'en_route'].includes(job.status) && (
+      {ON_JOB.includes(job.status) && <EmergencyButton jobId={job.id} fallback={job.location} />}
+      {job.worker && <ReportProblem jobId={job.id} jobStatus={job.status} />}
+
+      {['scheduled', 'searching', 'accepted', 'en_route'].includes(job.status) && (
         <Button title="Cancel booking" variant="danger" onPress={() => act('cancel', 'cancel')} loading={busy === 'cancel'} />
       )}
       {['completed', 'cancelled'].includes(job.status) && (
@@ -279,8 +299,38 @@ function WorkerView({ job, act, busy }: { job: Job; act: ActFn; busy: string | n
           busy={busy === 'rate'}
         />
       )}
+      {ON_JOB.includes(job.status) && <EmergencyButton jobId={job.id} fallback={job.location} />}
+      <ReportProblem jobId={job.id} jobStatus={job.status} />
       {['completed', 'cancelled'].includes(job.status) && (
         <Button title="Back to home" variant="ghost" onPress={() => router.replace('/')} />
+      )}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ staff (read-only)
+function StaffView({ job }: { job: Job }) {
+  return (
+    <>
+      {ON_JOB.includes(job.status) && <JobMap home={job.location} worker={job.worker?.location ?? null} workerLabel={job.worker?.name ?? 'Worker'} />}
+      <Card>
+        <LineItem label="Customer" value={`${job.customer?.name} · ${job.customer?.phone}`} />
+        <LineItem label="Worker" value={job.worker ? `${job.worker.name} · ${job.worker.phone}` : 'Not assigned'} />
+        {job.worker && <LineItem label="Agency" value={job.worker.agency.name} />}
+        <Muted>{job.address}</Muted>
+        {job.notes ? <Muted>“{job.notes}”</Muted> : null}
+      </Card>
+      <Card>
+        <LineItem label="Customer pays" value={kwacha(job.total)} />
+        <LineItem label="Worker earns" value={kwacha(job.workerPayout ?? 0)} />
+        <LineItem label="Payment" value={job.paymentStatus} />
+      </Card>
+      <ReportProblem jobId={job.id} jobStatus={job.status} />
+      {job.customer && (
+        <Row>
+          <Button title="Call customer" variant="secondary" style={{ flex: 1 }} onPress={() => Linking.openURL(`tel:${job.customer?.phone}`)} />
+          {job.worker && <Button title="Call worker" variant="secondary" style={{ flex: 1 }} onPress={() => Linking.openURL(`tel:${job.worker?.phone}`)} />}
+        </Row>
       )}
     </>
   );
@@ -348,6 +398,7 @@ function RateCard({
 function Timeline({ job }: { job: Job }) {
   const steps: [string, string | null][] = [
     ['Requested', job.createdAt],
+    ['Booked for', job.scheduledFor],
     ['Worker accepted', job.acceptedAt],
     ['On the way', job.enRouteAt],
     ['Checked in', job.checkedInAt],
@@ -360,7 +411,7 @@ function Timeline({ job }: { job: Job }) {
       {shown.map(([label, at]) => (
         <Row key={label} style={{ justifyContent: 'space-between' }}>
           <Muted>{label}</Muted>
-          <Muted>{time(at)}</Muted>
+          <Muted>{label === 'Booked for' && at ? formatWhen(at) : time(at)}</Muted>
         </Row>
       ))}
     </View>

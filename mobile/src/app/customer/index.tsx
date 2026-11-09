@@ -45,6 +45,9 @@ export default function CustomerHome() {
 
   const active = jobs.find((j) => OPEN_STATUSES.includes(j.status));
   const unpaid = jobs.find((j) => j.status === 'completed' && j.paymentStatus !== 'paid');
+  const planned = jobs
+    .filter((j) => j.status === 'scheduled')
+    .sort((a, b) => (a.scheduledFor ?? '').localeCompare(b.scheduledFor ?? ''));
 
   return (
     <Screen>
@@ -81,12 +84,20 @@ export default function CustomerHome() {
         </>
       )}
 
+      {planned.length > 0 && (
+        <>
+          <H2>Booked ahead</H2>
+          {planned.map((j) => (
+            <JobSummary key={j.id} job={j} role="customer" />
+          ))}
+        </>
+      )}
+
       <H2>What do you need help with?</H2>
       {services.map((s) => (
         <Card
           key={s.id}
-          onPress={active ? undefined : () => router.push({ pathname: '/customer/book', params: { serviceId: s.id } })}
-          style={active ? { opacity: 0.5 } : undefined}
+          onPress={() => router.push({ pathname: '/customer/book', params: { serviceId: s.id, laterOnly: active ? '1' : '' } })}
         >
           <Row style={{ justifyContent: 'space-between' }}>
             <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>{s.name}</Text>
@@ -95,7 +106,7 @@ export default function CustomerHome() {
           <Muted>{s.description}</Muted>
         </Card>
       ))}
-      {active && <Muted>You can book again once your current booking is finished.</Muted>}
+      {active && <Muted>While this booking is under way, you can book more help for later.</Muted>}
 
       <Button title="Past bookings" variant="secondary" onPress={() => router.push('/history')} />
     </Screen>

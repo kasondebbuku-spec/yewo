@@ -10,6 +10,7 @@ import { ACTIVE_STATUSES, offerView, round1, workerProfile } from '../jobs.js';
 import { emitToUser } from '../realtime.js';
 import { requireCoords } from '../validation.js';
 import { parseSkills } from './auth.js';
+import { workerPayouts } from '../services/payoutService.js';
 
 const router = Router();
 router.use(requireAuth('worker'));
@@ -102,6 +103,11 @@ router.get('/me/earnings', (req, res) => {
     thisWeek: sum(startOfWeek.toISOString()),
     allTime: sum('0000'),
   });
+});
+
+// Money waiting for the next payout day, and past weekly payouts.
+router.get('/me/payouts', (req, res) => {
+  res.json(workerPayouts(req.user.id));
 });
 
 // NRC front, NRC back and selfie for verification.

@@ -11,6 +11,7 @@ const DEMO_ACCOUNTS = [
   { label: 'Customer', phone: '0971111111' },
   { label: 'Worker', phone: '0962222221' },
   { label: 'Admin', phone: '0960000001' },
+  { label: 'Agency', phone: '0960000002' },
 ];
 
 export default function Welcome() {

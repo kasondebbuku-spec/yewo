@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors, Muted } from './ui';
 import type { Point } from '@/lib/types';
 
-export type Zone = { id: number; name: string; lat: number; lng: number; radius_km: number; active: boolean };
+export type Zone = { id: number; name: string; lat: number; lng: number; radiusKm: number; active: boolean };
 
 const fmt = (p: Point) => `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`;
 

@@ -1,19 +1,18 @@
-// The booking lifecycle:
-//
-//   searching -> accepted -> en_route -> in_progress (checked in) -> completed -> paid & rated
-//        |            |          |
-//        |            +----------+--> back to searching if the worker drops it
-//        +--> no_workers (customer can retry)       customer can cancel until check-in
+// HTTP adapter for jobs (UI layer). Each handler reads the request, calls the use case,
+// and shapes the answer. Allowed state changes live in domain/jobLifecycle.js.
 import { Router } from 'express';
 import { config } from '../config.js';
 import { getDb, now, transaction } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { badRequest, conflict, forbidden } from '../errors.js';
-import { detectZone, distanceKm } from '../geo.js';
-import { ACTIVE_STATUSES, jobView, loadJob, loadJobFor, notifyJob, round2 } from '../jobs.js';
+import { distanceKm } from '../geo.js';
+import { ACTIVE_STATUSES, jobView, loadJob, loadJobFor, notifyJob } from '../jobs.js';
 import { onOfferDeclined, redispatch, startDispatch, stopDispatch } from '../dispatch.js';
 import { requestPayment } from '../payments/index.js';
 import { mobileNetwork, normalizePhone, requireCoords, requireText } from '../validation.js';
+import { applyTransition } from '../repos/jobRepo.js';
+import { createBooking } from '../services/bookingService.js';
+import { raiseEmergency, report, reportOptions, reportsForJob } from '../services/incidentService.js';
 
 const router = Router();
 router.use(requireAuth());
@@ -31,56 +30,21 @@ function requireAssignedWorker(req) {
   return job;
 }
 
-// Move a job from one of `from` to `to`, refusing if it is in any other state.
-function setStatus(jobId, from, to, extra = {}) {
-  const cols = Object.keys(extra);
-  const sets = ['status = ?', ...cols.map((c) => `${c} = ?`)].join(', ');
-  const result = getDb()
-    .prepare(`UPDATE jobs SET ${sets} WHERE id = ? AND status IN (${placeholders(from)})`)
-    .run(to, ...Object.values(extra), jobId, ...from);
-  if (!result.changes) throw conflict(`This job can't be changed to "${to}" right now`);
-}
-
 const respond = (res, jobId, user) => res.json({ job: jobView(loadJob(jobId), user) });
 
-// ---- Customer books a service -------------------------------------------------
+const optionalCoords = (body) => (body.lat == null ? {} : requireCoords(body.lat, body.lng));
+
+// ---- Customer books a service (now or later) ----------------------------------
 router.post('/', (req, res) => {
   requireRole(req, 'customer');
-  const db = getDb();
-
-  const service = db.prepare('SELECT * FROM services WHERE id = ?').get(Number(req.body.serviceId));
-  if (!service) throw badRequest('Choose a service');
-  const address = requireText(req.body.address, 'Address', 200);
-  const point = requireCoords(req.body.lat, req.body.lng);
-  const notes = req.body.notes ? String(req.body.notes).trim().slice(0, 500) : null;
-  const urgent = !!req.body.urgent;
-
-  const zone = detectZone(point);
-  if (!zone) {
-    const names = db.prepare('SELECT name FROM zones WHERE active = 1').all().map((z) => z.name);
-    throw badRequest(`Yewo isn't available at this address yet. We currently serve ${names.join(', ')}.`);
-  }
-
-  const open = db
-    .prepare(`SELECT id FROM jobs WHERE customer_id = ? AND status IN (${placeholders(['searching', ...ACTIVE_STATUSES])})`)
-    .get(req.user.id, 'searching', ...ACTIVE_STATUSES);
-  if (open) throw conflict('You already have a booking in progress');
-
-  const urgencyFee = urgent ? config.urgencyFee : 0;
-  const total = service.base_price + urgencyFee;
-  const commission = round2(total * config.commissionRate);
-
-  const result = db
-    .prepare(
-      `INSERT INTO jobs (customer_id, service_id, zone_id, address, lat, lng, notes, urgent,
-                         price, urgency_fee, total, commission, worker_payout, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(req.user.id, service.id, zone.id, address, point.lat, point.lng, notes, urgent ? 1 : 0,
-         service.base_price, urgencyFee, total, commission, round2(total - commission), now());
-
-  const jobId = Number(result.lastInsertRowid);
-  startDispatch(jobId);
+  const jobId = createBooking(req.user, {
+    serviceId: req.body.serviceId,
+    address: requireText(req.body.address, 'Address', 200),
+    point: requireCoords(req.body.lat, req.body.lng),
+    notes: req.body.notes ? String(req.body.notes).trim().slice(0, 500) : null,
+    urgent: !!req.body.urgent,
+    scheduledFor: req.body.scheduledFor,
+  });
   res.status(201).json({ job: jobView(loadJob(jobId), req.user) });
 });
 
@@ -117,11 +81,11 @@ router.post('/:id/accept', (req, res) => {
     if (busy) throw conflict('Finish your current job first');
 
     // Only succeeds for the first worker to accept.
-    const taken = db
-      .prepare("UPDATE jobs SET worker_id = ?, status = 'accepted', accepted_at = ? WHERE id = ? AND status = 'searching'")
-      .run(req.user.id, now(), jobId);
-    if (!taken.changes) throw conflict('Another worker already took this job');
-
+    try {
+      applyTransition(jobId, 'accept', { worker_id: req.user.id, accepted_at: now() });
+    } catch {
+      throw conflict('Another worker already took this job');
+    }
     db.prepare("UPDATE job_offers SET status = 'accepted' WHERE job_id = ? AND worker_id = ?").run(jobId, req.user.id);
   });
 
@@ -144,9 +108,7 @@ router.post('/:id/decline', (req, res) => {
 router.post('/:id/release', (req, res) => {
   const job = requireAssignedWorker(req);
   transaction((db) => {
-    setStatus(job.id, ['accepted', 'en_route'], 'searching', {
-      worker_id: null, accepted_at: null, en_route_at: null,
-    });
+    applyTransition(job.id, 'release', { worker_id: null, accepted_at: null, en_route_at: null });
     db.prepare("UPDATE job_offers SET status = 'declined' WHERE job_id = ? AND worker_id = ?").run(job.id, req.user.id);
   });
   notifyJob(job.id, 'released');
@@ -157,7 +119,7 @@ router.post('/:id/release', (req, res) => {
 // ---- Worker progress -----------------------------------------------------------
 router.post('/:id/en-route', (req, res) => {
   const job = requireAssignedWorker(req);
-  setStatus(job.id, ['accepted'], 'en_route', { en_route_at: now() });
+  applyTransition(job.id, 'enRoute', { en_route_at: now() });
   notifyJob(job.id, 'en_route');
   respond(res, job.id, req.user);
 });
@@ -169,9 +131,7 @@ router.post('/:id/check-in', (req, res) => {
   if (meters > config.checkInRadiusM) {
     throw badRequest(`You need to be at the customer's address to check in (you are ${meters} m away).`);
   }
-  setStatus(job.id, ['accepted', 'en_route'], 'in_progress', {
-    checked_in_at: now(), check_in_distance_m: meters,
-  });
+  applyTransition(job.id, 'checkIn', { checked_in_at: now(), check_in_distance_m: meters });
   notifyJob(job.id, 'checked_in');
   respond(res, job.id, req.user);
 });
@@ -179,7 +139,7 @@ router.post('/:id/check-in', (req, res) => {
 router.post('/:id/check-out', (req, res) => {
   const job = requireAssignedWorker(req);
   transaction((db) => {
-    setStatus(job.id, ['in_progress'], 'completed', { completed_at: now() });
+    applyTransition(job.id, 'checkOut', { completed_at: now() });
     db.prepare('UPDATE workers SET jobs_completed = jobs_completed + 1 WHERE user_id = ?').run(req.user.id);
   });
   notifyJob(job.id, 'completed');
@@ -191,9 +151,7 @@ router.post('/:id/cancel', (req, res) => {
   requireRole(req, 'customer');
   const job = loadJobFor(req.params.id, req.user);
   const reason = req.body.reason ? String(req.body.reason).slice(0, 200) : null;
-  setStatus(job.id, ['searching', 'accepted', 'en_route', 'no_workers'], 'cancelled', {
-    cancelled_at: now(), cancel_reason: reason,
-  });
+  applyTransition(job.id, 'cancel', { cancelled_at: now(), cancel_reason: reason });
   stopDispatch(job.id);
   notifyJob(job.id, 'cancelled');
   respond(res, job.id, req.user);
@@ -204,7 +162,7 @@ router.post('/:id/retry', (req, res) => {
   requireRole(req, 'customer');
   const job = loadJobFor(req.params.id, req.user);
   transaction((db) => {
-    setStatus(job.id, ['no_workers'], 'searching', { dispatch_wave: 0 });
+    applyTransition(job.id, 'retry', { dispatch_wave: 0 });
     db.prepare('DELETE FROM job_offers WHERE job_id = ?').run(job.id);
   });
   startDispatch(job.id);
@@ -257,6 +215,26 @@ router.post('/:id/rate', (req, res) => {
 
   notifyJob(job.id);
   respond(res, job.id, req.user);
+});
+
+// ---- Reports and emergencies (both sides) --------------------------------------
+router.get('/:id/reports', (req, res) => {
+  const reports = reportsForJob(req.user, req.params.id);
+  const options = req.user.role === 'admin' ? [] : reportOptions(req.user, req.params.id);
+  res.json({ reports, options });
+});
+
+router.post('/:id/reports', (req, res) => {
+  const incident = report(req.user, req.params.id, {
+    kind: req.body.kind,
+    description: req.body.description,
+    ...optionalCoords(req.body),
+  });
+  res.status(201).json({ report: incident });
+});
+
+router.post('/:id/emergency', (req, res) => {
+  res.status(201).json(raiseEmergency(req.user, req.params.id, optionalCoords(req.body)));
 });
 
 export default router;

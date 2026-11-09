@@ -12,6 +12,11 @@ import catalogRoutes from './routes/catalog.js';
 import workerRoutes from './routes/workers.js';
 import jobRoutes from './routes/jobs.js';
 import adminRoutes from './routes/admin.js';
+import agencyRoutes from './routes/agency.js';
+import { DomainError } from './domain/errors.js';
+import { startScheduler, stopScheduler } from './services/bookingScheduler.js';
+
+const DOMAIN_STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409 };
 
 export function createApp() {
   const app = express();
@@ -28,6 +33,7 @@ export function createApp() {
   app.use('/workers', workerRoutes);
   app.use('/jobs', jobRoutes);
   app.use('/admin', adminRoutes);
+  app.use('/agency', agencyRoutes);
 
   // Private photos, only through a signed link from the admin or worker API.
   app.get('/files/:id', (req, res) => {
@@ -42,6 +48,7 @@ export function createApp() {
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof DomainError) return res.status(DOMAIN_STATUS[err.kind] ?? 400).json({ error: err.message });
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON' });
     if (err.name === 'MulterError') {
       const msg = err.code === 'LIMIT_FILE_SIZE' ? 'That photo is too big (max 5 MB).' : 'Upload failed. Please try again.';
@@ -59,9 +66,11 @@ export async function startServer({ port, dbFile }) {
   seedCatalog();
   const server = http.createServer(createApp());
   attachRealtime(server);
+  startScheduler();
   await new Promise((resolve) => server.listen(port, resolve));
 
   server.stopAll = async () => {
+    stopScheduler();
     stopAllDispatch();
     closeRealtime();
     await new Promise((resolve) => server.close(resolve));

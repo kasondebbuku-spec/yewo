@@ -2,7 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { api, setApiToken } from './api';
+import { api, setApiToken, setAuthReady } from './api';
 import { API_URL } from './config';
 import { registerForPush, unregisterPush } from './push';
 import type { User } from './types';
@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await AsyncStorage.removeItem(TOKEN_KEY);
         }
       }
+      setAuthReady();
       setReady(true);
     })();
   }, []);

@@ -53,6 +53,7 @@ export const DEMO_PIN = '1234';
 export const DEMO_USERS = [
   { role: 'admin', name: 'Yewo Admin', phone: '0960000001' },
   { role: 'customer', name: 'Chanda Mwila', phone: '0971111111' },
+  { role: 'agency', name: 'Bwalya Mulenga', phone: '0960000002', agency: 1 }, // manager at Kabulonga Domestic Services
   {
     role: 'worker', name: 'Mary Banda', phone: '0962222221', nrc: '123456/10/1', agency: 1,
     skills: [1, 2, 3], status: 'verified', online: 1, lat: -15.412, lng: 28.336, rating: [4.8, 23], done: 23,
@@ -80,15 +81,20 @@ export function seedDemo() {
         d.prepare('INSERT INTO users (role, name, phone, pin_hash, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(u.role, u.name, u.phone, pinHash, now()).lastInsertRowid
       );
+      if (u.role === 'agency') {
+        d.prepare('INSERT INTO agency_staff (user_id, agency_id) VALUES (?, ?)').run(id, u.agency);
+        continue;
+      }
       if (u.role !== 'worker') continue;
       d.prepare(
         `INSERT INTO workers (user_id, nrc, agency_id, verification_status, verified_at, skills,
-                              is_online, lat, lng, location_at, rating_avg, rating_count, jobs_completed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                              is_online, lat, lng, location_at, rating_avg, rating_count, jobs_completed,
+                              agency_confirmed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, u.nrc, u.agency, u.status, u.status === 'verified' ? now() : null, JSON.stringify(u.skills),
         u.online, u.lat ?? null, u.lng ?? null, u.lat ? now() : null,
-        u.rating?.[0] ?? 0, u.rating?.[1] ?? 0, u.done ?? 0
+        u.rating?.[0] ?? 0, u.rating?.[1] ?? 0, u.done ?? 0, u.status === 'verified' ? now() : null
       );
     }
   });

@@ -174,6 +174,7 @@ export default function WorkerHome() {
             <Stat label="This week" value={kwacha(earnings.thisWeek.amount)} sub={jobsLabel(earnings.thisWeek.jobs)} />
             <Stat label="All time" value={kwacha(earnings.allTime.amount)} sub={jobsLabel(earnings.allTime.jobs)} />
           </Row>
+          <Button title="Payouts to my Mobile Money" variant="secondary" onPress={() => router.push('/worker/payouts')} />
         </Card>
       )}
 
@@ -181,6 +182,7 @@ export default function WorkerHome() {
         <H2>Your profile</H2>
         <Row>
           {worker.verified && <Badge label="✓ NRC verified" tone="success" />}
+          {worker.agencyConfirmed && <Badge label="✓ Agency confirmed" tone="success" />}
           <Muted>
             ★ {worker.rating.toFixed(1)} ({worker.ratingCount}) · {worker.jobsCompleted} jobs
           </Muted>

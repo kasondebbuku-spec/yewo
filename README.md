@@ -46,6 +46,7 @@ On a real phone with Expo Go, the app finds the API on the same computer automat
 | Worker   | 0962222223 | Joseph Tembo (labour, gardening) |
 | Worker   | 0772222224 | Ruth Zulu (*pending verification*) |
 | Admin    | 0960000001 | Yewo Admin |
+| Agency   | 0960000002 | Bwalya Mulenga, manager at Kabulonga Domestic Services (Mary and Grace) |
 
 The login screen has buttons that fill these in (development builds only).
 
@@ -73,7 +74,8 @@ in place of the map.
 ## How it works
 
 **Zones.** Kabulonga and Woodlands are live pilot zones (2 km circles). Ibex Hill, Rhodes Park
-and Roma are listed as "coming soon". Edit them in [`backend/src/seed.js`](backend/src/seed.js).
+and Roma are listed as "coming soon". Staff switch zones on or off, resize them, or add new
+neighbourhoods from **Admin → Zones**. New zones start switched off.
 
 **Dispatch** ([`backend/src/dispatch.js`](backend/src/dispatch.js)). Each request goes to the
 3 closest verified, online, free workers with the right skill, within 6 km. If nobody accepts in
@@ -93,6 +95,39 @@ and Roma are listed as "coming soon". Edit them in [`backend/src/seed.js`](backe
 
 **Money.** Price + optional K30 urgency fee. Yewo keeps 15%; the worker sees their payout
 before accepting. The admin screen shows paid bookings value, commission and average time to accept.
+
+## Booking ahead, reports, payouts and the agency portal
+
+**Booking ahead.** Customers choose **Now** or **Book for later**: any hour from 07:00 to 17:00
+(Lusaka time), at least an hour ahead and up to 14 days out. The booking waits as "Booked ahead".
+45 minutes before the time, the server starts finding a worker in the usual way, and the customer
+gets a notification. A customer can book more help for later while a job is under way. The urgency
+fee only applies to "now" bookings.
+
+**Reports and the emergency button.** Once a worker has taken a job, both sides can **Report a problem**
+(worker didn't arrive, customer wasn't there, job not done properly, damage, payment, unsafe
+behaviour, other). The app only offers the kinds that fit that stage of the job, up to 7 days after it
+ends. While a job is under way, both sides also see a red **🚨 Emergency** button. After a confirm
+tap, it alerts every Yewo admin and the worker's agency at once with the location, and shows one-tap
+calls to 999 / 991 police / 992 ambulance / 993 fire. **Confirm these numbers with Zambia Police
+before launch**; sources disagree on some of them, and they are in
+[`backend/src/config.js`](backend/src/config.js). Staff work through reports in **Admin → Reports**
+(urgent first), call either side, and close each report with a note the reporter sees.
+
+**Weekly payouts.** Every Monday, staff tap **Admin → Payouts → Work out last week's payouts**.
+This groups each worker's paid jobs from the previous week (Monday to Sunday, Lusaka time). Staff
+send each amount from Yewo's Mobile Money account and enter the transaction reference. The worker
+gets a notification and sees it under **Payouts to my Mobile Money**, along with what is waiting for
+the next payout day. Jobs paid late roll into the next week. Running it twice never pays twice.
+
+**Agency portal.** Partner agencies log in (role `agency`) to see their workers (online, rating,
+verification), recent jobs and earnings, and any reports involving their workers. Urgent reports
+and emergencies reach them as a notification too. When someone signs up saying they work for the
+agency, the agency taps **Yes, they work for us**, and the admin sees "✓ Agency confirmed" before
+approving. Agency logins are created by Yewo (see `seedDemo` in [`backend/src/seed.js`](backend/src/seed.js)).
+
+**Database upgrades.** Your existing `yewo.db` upgrades itself on start and keeps all its data
+(schema version 2). Run `npm run seed` once to add the demo agency login.
 
 ## SMS, NRC photos and push notifications
 
@@ -136,9 +171,11 @@ the app just updates live while it's open instead of sending notifications.
 | Zone detection, wave dispatch, accept/decline/drop job | |
 | Push notifications for offers, job updates, payments | Needs an EAS development build to receive |
 | Live worker location, ETA and maps | Turn-by-turn route on the map |
-| GPS check-in/check-out | Scheduled (later-today) bookings |
+| GPS check-in/check-out, booking ahead (up to 14 days) | |
 | Mobile Money flow (**mocked**) | Real MTN MoMo / Airtel Money APIs |
-| Two-way ratings, earnings, admin stats | Worker payouts, disputes, SOS button |
+| Two-way ratings, earnings, admin stats | |
+| Reports + emergency button, weekly payouts (sent by hand) | Automatic MoMo payouts (disbursement API) |
+| Agency portal, zone management | Agency logins created from the admin screen |
 | SQLite database | PostgreSQL for production |
 
 **Mock payments:** a payment "succeeds" after 3 seconds. Numbers ending in `0000` always fail,
@@ -149,6 +186,9 @@ a callback) already matches how both providers work.
 ## Tests
 
 ```bash
-cd backend && npm test     # 14 end-to-end tests: booking loop, dispatch, payments, SMS codes, NRC photos, push
-cd mobile && npm run typecheck && npx eslint src
+cd backend && npm test     # 38 tests: 16 business-rule unit tests + 22 end-to-end (booking, dispatch,
+                           # payments, SMS, NRC photos, push, zones, booking ahead, reports, payouts, agencies)
+cd mobile && npm run typecheck && npx expo lint
 ```
+
+How the code is organised (Larman's GRASP patterns and layers): see [DESIGN.md](DESIGN.md).

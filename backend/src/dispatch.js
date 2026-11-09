@@ -11,6 +11,7 @@ import { distanceKm } from './geo.js';
 import { ACTIVE_STATUSES, loadJob, notifyJob, offerView } from './jobs.js';
 import { emitToUser } from './realtime.js';
 import { pushToUser } from './push.js';
+import { applyTransition } from './repos/jobRepo.js';
 
 const timers = new Map(); // jobId -> timeout handle
 
@@ -101,10 +102,12 @@ function onTimeout(jobId) {
 
 function markNoWorkers(jobId) {
   stopDispatch(jobId);
-  const res = getDb()
-    .prepare("UPDATE jobs SET status = 'no_workers' WHERE id = ? AND status = 'searching'")
-    .run(jobId);
-  if (res.changes) notifyJob(jobId, 'no_workers');
+  try {
+    applyTransition(jobId, 'giveUp');
+  } catch {
+    return; // taken or cancelled meanwhile
+  }
+  notifyJob(jobId, 'no_workers');
 }
 
 // Withdraw any offers still waiting for an answer and tell those workers.

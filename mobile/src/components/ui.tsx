@@ -166,6 +166,16 @@ export function LineItem({ label, value, bold }: { label: string; value: string;
   );
 }
 
+// A number with a small label, for dashboards.
+export function Tile({ label, value }: { label: string; value: string }) {
+  return (
+    <Card style={{ flexBasis: '47%', flexGrow: 1 }}>
+      <Muted style={{ fontSize: 12 }}>{label}</Muted>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text }}>{value}</Text>
+    </Card>
+  );
+}
+
 export function Loading() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>

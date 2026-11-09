@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { config } from '../config.js';
 import { getDb } from '../db.js';
-import { detectZone } from '../geo.js';
 import { requireCoords } from '../validation.js';
+import { allZones } from '../repos/zoneRepo.js';
+import { locate } from '../services/zoneService.js';
 
 const router = Router();
 
@@ -14,17 +16,30 @@ router.get('/agencies', (_req, res) => {
 });
 
 router.get('/zones', (_req, res) => {
-  const zones = getDb().prepare('SELECT * FROM zones ORDER BY active DESC, name').all();
-  res.json({ zones: zones.map((z) => ({ ...z, active: !!z.active })) });
+  res.json({ zones: allZones() });
 });
 
 // "Is Yewo available where I am?"
 router.get('/zones/detect', (req, res) => {
-  const point = requireCoords(req.query.lat, req.query.lng);
-  const zone = detectZone(point, { includeInactive: true });
+  const zone = locate(requireCoords(req.query.lat, req.query.lng), { includeInactive: true });
   res.json({
-    zone: zone ? { id: zone.id, name: zone.name, active: !!zone.active } : null,
+    zone: zone ? { id: zone.id, name: zone.name, active: zone.active } : null,
     available: !!zone?.active,
+  });
+});
+
+// Booking hours and emergency numbers, so the app doesn't hard-code them.
+router.get('/settings', (_req, res) => {
+  const s = config.scheduling;
+  res.json({
+    scheduling: {
+      minLeadMinutes: s.minLeadMinutes,
+      maxDaysAhead: s.maxDaysAhead,
+      openHour: s.openHour,
+      lastStartHour: s.lastStartHour,
+      timezoneOffsetMinutes: config.timezoneOffsetMinutes,
+    },
+    emergencyNumbers: config.emergencyNumbers,
   });
 });
 

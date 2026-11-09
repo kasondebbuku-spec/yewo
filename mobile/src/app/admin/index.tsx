@@ -1,11 +1,12 @@
 // Yewo staff screen: verify new workers and watch the key numbers.
 import { useCallback, useState } from 'react';
 import { Image, Modal, Pressable, Text, View } from 'react-native';
-import { Stack, useFocusEffect } from 'expo-router';
-import { Badge, Button, Card, colors, ErrorText, Field, H2, kwacha, Muted, Row, Screen } from '@/components/ui';
+import { router, Stack, useFocusEffect } from 'expo-router';
+import { Badge, Button, Card, colors, ErrorText, Field, H2, kwacha, Muted, Row, Screen, Tile } from '@/components/ui';
+import { useSocketEvent } from '@/lib/auth';
 import { LogoutButton } from '@/components/LogoutButton';
 import { api, errorMessage } from '@/lib/api';
-import type { WorkerProfile } from '@/lib/types';
+import type { Incident, WorkerProfile } from '@/lib/types';
 
 type Stats = {
   customers: number;
@@ -23,12 +24,18 @@ export default function AdminHome() {
   const [pending, setPending] = useState<WorkerProfile[]>([]);
   const [error, setError] = useState('');
   const [notes, setNotes] = useState<Record<number, string>>({});
+  const [openReports, setOpenReports] = useState<Incident[]>([]);
   const [viewing, setViewing] = useState<{ url: string; label: string } | null>(null);
 
   const load = useCallback(() => {
     api<Stats>('/admin/stats').then(setStats).catch((e) => setError(errorMessage(e)));
     api<{ workers: WorkerProfile[] }>('/admin/workers?status=pending').then((r) => setPending(r.workers)).catch(() => {});
+    api<{ incidents: Incident[] }>('/admin/incidents?status=open').then((r) => setOpenReports(r.incidents)).catch(() => {});
   }, []);
+  useSocketEvent<Incident>('incident:new', load);
+  useSocketEvent('worker:agency_confirmed', load);
+
+  const urgent = openReports.filter((r) => r.urgent);
   useFocusEffect(load);
 
   async function decide(id: number, decision: 'verified' | 'rejected') {
@@ -44,6 +51,19 @@ export default function AdminHome() {
   return (
     <Screen>
       <Stack.Screen options={{ headerRight: () => <LogoutButton /> }} />
+      {urgent.length > 0 && (
+        <Card style={{ backgroundColor: colors.dangerSoft, borderColor: '#FECACA' }} onPress={() => router.push('/admin/reports')}>
+          <H2>🚨 {urgent.length} urgent report{urgent.length === 1 ? '' : 's'}</H2>
+          <Muted>{urgent[0].label}: {urgent[0].reporter.name}, {urgent[0].job.address}. Tap to open.</Muted>
+        </Card>
+      )}
+
+      <Row style={{ flexWrap: 'wrap' }}>
+        <Button title={`Reports (${openReports.length})`} variant="secondary" style={{ flexGrow: 1 }} onPress={() => router.push('/admin/reports')} />
+        <Button title="Payouts" variant="secondary" style={{ flexGrow: 1 }} onPress={() => router.push('/admin/payouts')} />
+        <Button title="Zones" variant="secondary" style={{ flexGrow: 1 }} onPress={() => router.push('/admin/zones')} />
+      </Row>
+
       {stats && (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
           <Tile label="Paid bookings value" value={kwacha(stats.gmv)} />
@@ -62,6 +82,10 @@ export default function AdminHome() {
           <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>{w.name}</Text>
           <Muted>NRC {w.nrc} · {w.phone}</Muted>
           <Muted>Agency: {w.agency.name}{w.agency.phone ? ` (${w.agency.phone})` : ''}</Muted>
+          <Badge
+            tone={w.agencyConfirmed ? 'success' : 'warn'}
+            label={w.agencyConfirmed ? '✓ Agency confirmed they work there' : 'Agency has not confirmed yet'}
+          />
           <Row style={{ gap: 10, marginTop: 6 }}>
             {w.documents?.map((d) => (
               <Pressable
@@ -117,11 +141,3 @@ export default function AdminHome() {
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
-  return (
-    <Card style={{ flexBasis: '47%', flexGrow: 1 }}>
-      <Muted style={{ fontSize: 12 }}>{label}</Muted>
-      <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text }}>{value}</Text>
-    </Card>
-  );
-}

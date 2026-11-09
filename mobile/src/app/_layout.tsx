@@ -38,7 +38,12 @@ export default function RootLayout() {
           <Stack.Screen name="customer/index" options={{ title: 'Yewo', headerBackVisible: false }} />
           <Stack.Screen name="customer/book" options={{ title: 'Book a worker' }} />
           <Stack.Screen name="worker/index" options={{ title: 'Yewo Worker', headerBackVisible: false }} />
+          <Stack.Screen name="worker/payouts" options={{ title: 'My payouts' }} />
           <Stack.Screen name="admin/index" options={{ title: 'Yewo Admin', headerBackVisible: false }} />
+          <Stack.Screen name="admin/zones" options={{ title: 'Service zones' }} />
+          <Stack.Screen name="admin/reports" options={{ title: 'Reports' }} />
+          <Stack.Screen name="admin/payouts" options={{ title: 'Worker payouts' }} />
+          <Stack.Screen name="agency/index" options={{ title: 'Yewo Partners', headerBackVisible: false }} />
           <Stack.Screen name="job/[id]" options={{ title: 'Booking' }} />
           <Stack.Screen name="history" options={{ title: 'Past bookings' }} />
         </Stack>

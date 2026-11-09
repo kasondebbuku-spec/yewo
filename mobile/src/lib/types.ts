@@ -1,4 +1,4 @@
-export type Role = 'customer' | 'worker' | 'admin';
+export type Role = 'customer' | 'worker' | 'admin' | 'agency';
 
 export type Point = { lat: number; lng: number };
 
@@ -12,6 +12,8 @@ export type WorkerProfile = {
   verificationNote?: string | null;
   documents?: WorkerDocument[];
   agency: { id: number; name: string; phone: string | null };
+  agencyConfirmed?: boolean;
+  photosComplete?: boolean;
   rating: number;
   ratingCount: number;
   jobsCompleted: number;
@@ -36,12 +38,14 @@ export type User = {
   name: string;
   phone: string;
   worker?: WorkerProfile;
+  agency?: { id: number; name: string; phone: string | null; area: string | null } | null;
 };
 
 export type Service = { id: number; name: string; description: string; base_price: number };
 export type Agency = { id: number; name: string; area: string };
 
 export type JobStatus =
+  | 'scheduled'
   | 'searching'
   | 'accepted'
   | 'en_route'
@@ -72,6 +76,7 @@ export type Job = {
   payment: { provider: 'mtn' | 'airtel'; phone: string; amount: number; reference: string; status: string } | null;
   customerRating: Rating | null;
   workerRating: Rating | null;
+  scheduledFor: string | null;
   createdAt: string;
   acceptedAt: string | null;
   enRouteAt: string | null;
@@ -94,3 +99,50 @@ export type Offer = {
 };
 
 export const OPEN_STATUSES: JobStatus[] = ['searching', 'accepted', 'en_route', 'in_progress'];
+
+export type IncidentKind =
+  | 'emergency' | 'safety' | 'no_show' | 'customer_absent' | 'quality' | 'damage' | 'payment' | 'other';
+
+export type ReportOption = { kind: IncidentKind; label: string; urgent: boolean };
+
+export type Incident = {
+  id: number;
+  jobId: number;
+  kind: IncidentKind;
+  label: string;
+  urgent: boolean;
+  description: string | null;
+  location: Point | null;
+  status: 'open' | 'resolved' | 'dismissed';
+  resolution: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  reporter: { id: number; name: string; role: Role; phone: string };
+  job: { status: JobStatus; address: string; service: string };
+};
+
+export type EmergencyNumber = { label: string; number: string };
+
+export type Payout = {
+  id: number;
+  worker: { id: number; name: string; phone: string; network: 'mtn' | 'airtel' | 'zamtel' };
+  agency: string;
+  periodStart: string;
+  periodEnd: string;
+  jobs: number;
+  amount: number;
+  status: 'pending' | 'paid';
+  reference: string | null;
+  paidAt: string | null;
+};
+
+export type AdminZone = {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  active: boolean;
+  jobs: number;
+  openJobs: number;
+};

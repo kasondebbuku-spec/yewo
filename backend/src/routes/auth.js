@@ -7,6 +7,7 @@ import { workerProfile } from '../jobs.js';
 import { phoneFromToken, requestCode, verifyCode } from '../otp.js';
 import { removePushToken, savePushToken } from '../push.js';
 import { normalizePhone, requireText, validateNrc, validatePin } from '../validation.js';
+import { agencyIdOfStaff, findAgency } from '../repos/agencyRepo.js';
 
 const router = Router();
 
@@ -24,7 +25,13 @@ const meView = (user) => ({
   name: user.name,
   phone: user.phone,
   worker: user.role === 'worker' ? workerProfile(user.id, { fullNrc: true }) : undefined,
+  agency: user.role === 'agency' ? agencySummary(user.id) : undefined,
 });
+
+function agencySummary(userId) {
+  const a = findAgency(agencyIdOfStaff(userId));
+  return a ? { id: a.id, name: a.name, phone: a.phone, area: a.area } : null;
+}
 
 const PURPOSES = ['register', 'reset_pin'];
 

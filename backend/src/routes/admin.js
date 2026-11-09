@@ -6,6 +6,10 @@ import { badRequest, notFound } from '../errors.js';
 import { workerProfile } from '../jobs.js';
 import { hasAllDocuments, listDocuments } from '../documents.js';
 import { pushToUser } from '../push.js';
+import { requireCoords } from '../validation.js';
+import { addZone, changeZone, listZonesWithActivity } from '../services/zoneService.js';
+import * as incidents from '../services/incidentService.js';
+import * as payouts from '../services/payoutService.js';
 import { baseUrl } from './workers.js';
 
 const router = Router();
@@ -65,6 +69,45 @@ router.get('/stats', (_req, res) => {
          FROM jobs WHERE accepted_at IS NOT NULL`
     ).n,
   });
+});
+
+// ---- Zones: open, close, resize or add neighbourhoods ---------------------------
+router.get('/zones', (_req, res) => {
+  res.json({ zones: listZonesWithActivity() });
+});
+
+router.patch('/zones/:id', (req, res) => {
+  const { active, radiusKm, name } = req.body;
+  res.json({ zone: changeZone(req.params.id, { active, radiusKm, name }) });
+});
+
+router.post('/zones', (req, res) => {
+  const point = requireCoords(req.body.lat, req.body.lng);
+  res.status(201).json({ zone: addZone({ ...point, name: req.body.name, radiusKm: req.body.radiusKm, active: !!req.body.active }) });
+});
+
+// ---- Reports and emergencies -------------------------------------------------------
+router.get('/incidents', (req, res) => {
+  const status = ['open', 'resolved', 'dismissed'].includes(req.query.status) ? req.query.status : undefined;
+  res.json({ incidents: incidents.listForStaff({ status }) });
+});
+
+router.post('/incidents/:id/resolve', (req, res) => {
+  res.json({ incident: incidents.resolve(req.user, req.params.id, req.body) });
+});
+
+// ---- Weekly worker payouts -------------------------------------------------------
+router.get('/payouts', (req, res) => {
+  const status = ['pending', 'paid'].includes(req.query.status) ? req.query.status : undefined;
+  res.json({ payouts: payouts.listForStaff({ status }) });
+});
+
+router.post('/payouts/run', (_req, res) => {
+  res.json(payouts.runWeeklyPayouts());
+});
+
+router.post('/payouts/:id/mark-paid', (req, res) => {
+  res.json({ payout: payouts.markPaid(req.params.id, req.body.reference) });
 });
 
 export default router;

@@ -19,6 +19,31 @@ export const config = {
   // Worker must be this close to the job address to check in
   checkInRadiusM: num('CHECKIN_RADIUS_M', 300),
 
+  // Lusaka is UTC+2 all year (no daylight saving). Used for opening hours and payout weeks.
+  timezoneOffsetMinutes: 120,
+
+  // Booking ahead
+  scheduling: {
+    minLeadMinutes: 60, // earliest "later" booking is an hour from now
+    maxDaysAhead: 14,
+    openHour: 7, // jobs can start from 07:00…
+    lastStartHour: 17, // …until 17:00 (Lusaka time)
+    dispatchLeadMinutes: 45, // start finding a worker this long before the booked time
+    maxPerCustomer: 3,
+    checkEveryMs: num('SCHEDULER_INTERVAL_MS', 30_000),
+  },
+
+  // Reports can be made up to this many days after a job ends
+  reportWindowDays: 7,
+
+  // Shown on the emergency screen. Confirm these with Zambia Police before launch.
+  emergencyNumbers: [
+    { label: 'Emergency', number: '999' },
+    { label: 'Police', number: '991' },
+    { label: 'Ambulance', number: '992' },
+    { label: 'Fire', number: '993' },
+  ],
+
   // Fake MoMo: how long before a payment request "succeeds"
   mockPaymentDelayMs: num('MOCK_PAYMENT_DELAY_MS', 3000),
 

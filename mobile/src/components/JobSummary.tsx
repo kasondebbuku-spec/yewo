@@ -2,9 +2,11 @@
 import { Text } from 'react-native';
 import { router } from 'expo-router';
 import { Badge, Card, colors, kwacha, Muted, Row } from './ui';
+import { formatWhen } from '@/lib/time';
 import type { Job, Role } from '@/lib/types';
 
 const LABELS: Record<Job['status'], { customer: string; worker: string; tone: 'primary' | 'success' | 'warn' | 'danger' | 'muted' }> = {
+  scheduled: { customer: 'Booked ahead', worker: 'Booked ahead', tone: 'primary' },
   searching: { customer: 'Finding a worker', worker: 'Searching', tone: 'warn' },
   accepted: { customer: 'Worker assigned', worker: 'Accepted', tone: 'primary' },
   en_route: { customer: 'Worker on the way', worker: 'On the way', tone: 'primary' },
@@ -29,7 +31,7 @@ export function JobSummary({ job, role }: { job: Job; role: Role }) {
         <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>{kwacha(amount)}</Text>
       </Row>
       <Muted>
-        {job.zone.name} · {new Date(job.createdAt).toLocaleDateString()}
+        {job.zone.name} · {job.scheduledFor ? formatWhen(job.scheduledFor) : new Date(job.createdAt).toLocaleDateString()}
         {job.worker && role === 'customer' ? ` · ${job.worker.name}` : ''}
       </Muted>
       <Row>
