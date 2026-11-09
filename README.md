@@ -11,7 +11,11 @@ yewo/
 └── mobile/    Expo (React Native) app: Android, iOS and web, one codebase
 ```
 
-## Run it
+## Run it online
+
+The API is set up to run on Railway with a volume for the database and photos. Step by step: [DEPLOY.md](DEPLOY.md).
+
+## Run it on your computer
 
 You need Node.js 22.13 or newer. Open two terminals.
 
@@ -176,7 +180,7 @@ the app just updates live while it's open instead of sending notifications.
 | Two-way ratings, earnings, admin stats | |
 | Reports + emergency button, weekly payouts (sent by hand) | Automatic MoMo payouts (disbursement API) |
 | Agency portal, zone management | Agency logins created from the admin screen |
-| SQLite database | PostgreSQL for production |
+| SQLite on a Railway volume, daily backups ([DEPLOY.md](DEPLOY.md)) | PostgreSQL (needed for more than one server) |
 
 **Mock payments:** a payment "succeeds" after 3 seconds. Numbers ending in `0000` always fail,
 so you can test the retry screen. To go live, add MTN and Airtel providers in
@@ -186,7 +190,7 @@ a callback) already matches how both providers work.
 ## Tests
 
 ```bash
-cd backend && npm test     # 38 tests: 16 business-rule unit tests + 22 end-to-end (booking, dispatch,
+cd backend && npm test     # 42 tests: business-rule and setup unit tests + 22 end-to-end (booking, dispatch,
                            # payments, SMS, NRC photos, push, zones, booking ahead, reports, payouts, agencies)
 cd mobile && npm run typecheck && npx expo lint
 ```

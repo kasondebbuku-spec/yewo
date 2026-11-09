@@ -41,7 +41,7 @@ export async function requestCode(phone, purpose) {
   }
 
   // Development only: hand the code back so you can test without a phone.
-  const exposeCode = config.smsProvider === 'console' && !config.isProduction;
+  const exposeCode = config.smsProvider === 'console' && (!config.isProduction || config.showSmsCodes);
   return exposeCode ? { devCode: code } : {};
 }
 

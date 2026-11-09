@@ -1,7 +1,7 @@
 import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
-import { initDb } from './db.js';
+import { getDb, initDb } from './db.js';
 import { HttpError } from './errors.js';
 import { attachRealtime, closeRealtime } from './realtime.js';
 import { stopAllDispatch } from './dispatch.js';
@@ -20,6 +20,8 @@ const DOMAIN_STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 
 
 export function createApp() {
   const app = express();
+  app.set('trust proxy', 1); // behind Railway's HTTPS proxy: links we build use https
+  app.disable('x-powered-by');
   app.use(cors());
   app.use(express.json({ limit: '100kb' }));
   app.use((req, _res, next) => {
@@ -27,7 +29,10 @@ export function createApp() {
     next();
   });
 
-  app.get('/health', (_req, res) => res.json({ ok: true, service: 'yewo-api' }));
+  app.get('/health', (_req, res) => {
+    getDb().prepare('SELECT 1').get(); // fails (500) if the database is unreachable
+    res.json({ ok: true, service: 'yewo-api' });
+  });
   app.use('/auth', authRoutes);
   app.use('/', catalogRoutes);
   app.use('/workers', workerRoutes);
