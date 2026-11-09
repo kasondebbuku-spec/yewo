@@ -11,6 +11,7 @@ export function attachRealtime(httpServer) {
   io.use((socket, next) => {
     try {
       const payload = verifyToken(socket.handshake.auth?.token);
+      if (payload.typ || !payload.sub) throw new Error('not a login token');
       socket.data.userId = payload.sub;
       next();
     } catch {

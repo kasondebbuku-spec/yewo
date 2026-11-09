@@ -9,6 +9,8 @@ export type WorkerProfile = {
   nrc: string;
   verificationStatus: 'pending' | 'verified' | 'rejected';
   verified: boolean;
+  verificationNote?: string | null;
+  documents?: WorkerDocument[];
   agency: { id: number; name: string; phone: string | null };
   rating: number;
   ratingCount: number;
@@ -18,6 +20,14 @@ export type WorkerProfile = {
   location: (Point & { at: string }) | null;
   distanceKm?: number | null;
   etaMinutes?: number | null;
+};
+
+export type WorkerDocument = {
+  kind: 'nrc_front' | 'nrc_back' | 'selfie';
+  label: string;
+  uploaded: boolean;
+  url: string | null;
+  uploadedAt?: string;
 };
 
 export type User = {

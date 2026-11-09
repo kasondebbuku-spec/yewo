@@ -46,5 +46,5 @@ export function settlePayment(reference, status) {
     d.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), payment.id);
     d.prepare('UPDATE jobs SET payment_status = ? WHERE id = ?').run(status, payment.job_id);
   });
-  notifyJob(payment.job_id);
+  notifyJob(payment.job_id, status === 'paid' ? 'paid' : undefined);
 }

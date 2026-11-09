@@ -21,4 +21,24 @@ export const config = {
 
   // Fake MoMo: how long before a payment request "succeeds"
   mockPaymentDelayMs: num('MOCK_PAYMENT_DELAY_MS', 3000),
+
+  // SMS codes. "console" prints codes in the server terminal (development).
+  // "africastalking" sends real SMS: set AT_USERNAME, AT_API_KEY and optionally AT_SENDER_ID.
+  smsProvider: process.env.SMS_PROVIDER || 'console',
+  africasTalking: {
+    username: process.env.AT_USERNAME || 'sandbox',
+    apiKey: process.env.AT_API_KEY || '',
+    senderId: process.env.AT_SENDER_ID || '',
+  },
+  otpTtlMs: 10 * 60 * 1000,
+  isProduction: process.env.NODE_ENV === 'production',
+
+  // NRC photos
+  uploadDir: process.env.UPLOAD_DIR || 'uploads',
+  maxUploadBytes: 5 * 1024 * 1024,
+
+  // Push notifications through Expo's push service. "memory" keeps them in a list (tests),
+  // "off" disables them. EXPO_ACCESS_TOKEN is optional (only if you enable push security).
+  pushProvider: process.env.PUSH_PROVIDER || 'expo',
+  expoAccessToken: process.env.EXPO_ACCESS_TOKEN || '',
 };

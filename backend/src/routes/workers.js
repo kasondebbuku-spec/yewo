@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import multer from 'multer';
+import { config } from '../config.js';
+import { listDocuments, saveDocument } from '../documents.js';
 import { getDb, now } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { conflict, forbidden } from '../errors.js';
@@ -10,6 +13,9 @@ import { parseSkills } from './auth.js';
 
 const router = Router();
 router.use(requireAuth('worker'));
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxUploadBytes, files: 1 } });
+export const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 const activeJobOf = (workerId) =>
   getDb()
@@ -96,6 +102,16 @@ router.get('/me/earnings', (req, res) => {
     thisWeek: sum(startOfWeek.toISOString()),
     allTime: sum('0000'),
   });
+});
+
+// NRC front, NRC back and selfie for verification.
+router.get('/me/documents', (req, res) => {
+  res.json({ documents: listDocuments(req.user.id, baseUrl(req)) });
+});
+
+router.put('/me/documents/:kind', upload.single('photo'), (req, res) => {
+  saveDocument(req.user.id, req.params.kind, req.file?.buffer);
+  res.json({ documents: listDocuments(req.user.id, baseUrl(req)) });
 });
 
 export default router;

@@ -6,9 +6,21 @@ import { io as connect } from 'socket.io-client';
 process.env.OFFER_TIMEOUT_MS = '300';
 process.env.MOCK_PAYMENT_DELAY_MS = '50';
 process.env.MAX_WAVES = '2';
+process.env.PUSH_PROVIDER = 'memory';
+const { mkdtempSync } = await import('node:fs');
+const { join } = await import('node:path');
+const { tmpdir } = await import('node:os');
+process.env.UPLOAD_DIR = mkdtempSync(join(tmpdir(), 'yewo-test-'));
 
 const { startServer } = await import('../src/app.js');
 const { seedDemo, DEMO_PIN } = await import('../src/seed.js');
+const { sentPushes } = await import('../src/push.js');
+
+// A tiny valid PNG, used as a stand-in for NRC photos.
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64'
+);
 
 let server;
 let base;
@@ -31,11 +43,36 @@ async function api(method, path, token, body) {
 const login = async (phone) => (await api('POST', '/auth/login', null, { phone, pin: DEMO_PIN })).body;
 
 let phoneCounter = 3000000;
-async function newCustomer() {
-  const phone = `097${phoneCounter++}`;
-  const r = await api('POST', '/auth/register', null, { name: 'Test Customer', phone, pin: '4321' });
+const nextPhone = () => `097${phoneCounter++}`;
+
+// SMS step: ask for a code (the console provider returns it in development) and verify it.
+async function verifyPhone(phone, purpose = 'register') {
+  const sent = await api('POST', '/auth/otp/request', null, { phone, purpose });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  const verified = await api('POST', '/auth/otp/verify', null, { phone, purpose, code: sent.body.devCode });
+  assert.equal(verified.status, 200, JSON.stringify(verified.body));
+  return verified.body.phoneToken;
+}
+
+async function register(fields) {
+  const phone = fields.phone ?? nextPhone();
+  const phoneToken = await verifyPhone(phone);
+  const r = await api('POST', '/auth/register', null, { pin: '4321', ...fields, phoneToken });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   return r.body;
+}
+
+const newCustomer = () => register({ name: 'Test Customer' });
+
+async function uploadPhoto(token, kind, bytes = PNG) {
+  const form = new FormData();
+  form.append('photo', new Blob([bytes]), 'photo.png');
+  const res = await fetch(`${base}/workers/me/documents/${kind}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  });
+  return { status: res.status, body: await res.json() };
 }
 
 async function socketFor(token) {
@@ -85,36 +122,100 @@ describe('accounts and verification', () => {
   });
 
   test('worker sign-up checks the NRC format', async () => {
+    const phone = '0965550001';
+    const phoneToken = await verifyPhone(phone);
     const r = await api('POST', '/auth/register', null, {
-      role: 'worker', name: 'Bad NRC', phone: '0965550001', pin: '1234', nrc: '12345', agencyId: 1, skills: [1],
+      role: 'worker', name: 'Bad NRC', phoneToken, pin: '1234', nrc: '12345', agencyId: 1, skills: [1],
     });
     assert.equal(r.status, 400);
     assert.match(r.body.error, /NRC/);
   });
 
-  test('new workers stay offline until an admin verifies them', async () => {
-    const reg = await api('POST', '/auth/register', null, {
+  test('workers need NRC photos and admin approval before going online', async () => {
+    const reg = await register({
       role: 'worker', name: 'New Worker', phone: '0965550002', pin: '1234',
       nrc: '999999/10/1', agencyId: 2, skills: [1, 2],
     });
-    assert.equal(reg.status, 201);
-    assert.equal(reg.body.user.worker.verificationStatus, 'pending');
-    const workerToken = reg.body.token;
+    assert.equal(reg.user.worker.verificationStatus, 'pending');
+    const workerToken = reg.token;
+    const workerId = reg.user.id;
 
     const tooEarly = await api('PATCH', '/workers/me/status', workerToken, { online: true, ...KABULONGA_HOME });
     assert.equal(tooEarly.status, 403);
 
+    // Admin can't approve without photos.
     const admin = await login('0960000001');
+    const noPhotos = await api('POST', `/admin/workers/${workerId}/verify`, admin.token, { decision: 'verified' });
+    assert.equal(noPhotos.status, 400);
+    assert.match(noPhotos.body.error, /NRC/);
+
+    // Only real images, and only the three known photo types, are accepted.
+    const notImage = await uploadPhoto(workerToken, 'nrc_front', Buffer.from('this is not a photo'));
+    assert.equal(notImage.status, 400);
+    assert.equal((await uploadPhoto(workerToken, 'passport')).status, 400);
+
+    for (const kind of ['nrc_front', 'nrc_back', 'selfie']) {
+      const up = await uploadPhoto(workerToken, kind);
+      assert.equal(up.status, 200, JSON.stringify(up.body));
+    }
+
+    // Admin sees the three photos through signed links.
     const pending = await api('GET', '/admin/workers?status=pending', admin.token);
-    assert.ok(pending.body.workers.some((w) => w.name === 'New Worker'));
+    const listed = pending.body.workers.find((w) => w.id === workerId);
+    assert.deepEqual(listed.documents.map((d) => d.uploaded), [true, true, true]);
+    const photo = await fetch(listed.documents[0].url);
+    assert.equal(photo.status, 200);
+    assert.equal(photo.headers.get('content-type'), 'image/png');
+    const tampered = await fetch(listed.documents[0].url.replace(/sig=.*/, 'sig=nope'));
+    assert.equal(tampered.status, 404);
 
-    const verify = await api('POST', `/admin/workers/${reg.body.user.id}/verify`, admin.token, { decision: 'verified' });
+    // Approve: the worker gets a push notification and can go online.
+    await api('POST', '/auth/push-token', workerToken, { token: 'ExponentPushToken[new-worker]', platform: 'android' });
+    const verify = await api('POST', `/admin/workers/${workerId}/verify`, admin.token, { decision: 'verified' });
     assert.equal(verify.body.worker.verified, true);
+    assert.ok(sentPushes.some((p) => p.userId === workerId && /verified/.test(p.title)));
 
-    // Take them straight offline again so they don't affect the dispatch tests below.
     const online = await api('PATCH', '/workers/me/status', workerToken, { online: true, ...KABULONGA_HOME });
     assert.equal(online.status, 200);
     await api('PATCH', '/workers/me/status', workerToken, { online: false });
+  });
+
+  test('sign-up needs a verified phone number', async () => {
+    const phone = nextPhone();
+    const noToken = await api('POST', '/auth/register', null, { name: 'X', phone, pin: '1234' });
+    assert.equal(noToken.status, 400);
+
+    const sent = await api('POST', '/auth/otp/request', null, { phone, purpose: 'register' });
+    assert.match(sent.body.devCode, /^\d{6}$/);
+
+    const again = await api('POST', '/auth/otp/request', null, { phone, purpose: 'register' });
+    assert.equal(again.status, 429, 'one code per minute');
+
+    const wrongCode = sent.body.devCode === '000000' ? '111111' : '000000';
+    const wrong = await api('POST', '/auth/otp/verify', null, { phone, purpose: 'register', code: wrongCode });
+    assert.equal(wrong.status, 400);
+
+    const taken = await api('POST', '/auth/otp/request', null, { phone: '0971111111', purpose: 'register' });
+    assert.equal(taken.status, 409, 'existing numbers must log in instead');
+
+    // A phone token proves the number, but is not a login.
+    const ok = await api('POST', '/auth/otp/verify', null, { phone, purpose: 'register', code: sent.body.devCode });
+    assert.equal(ok.status, 200);
+    assert.equal((await api('GET', '/auth/me', ok.body.phoneToken)).status, 401);
+  });
+
+  test('forgot PIN: reset with an SMS code', async () => {
+    const c = await newCustomer();
+    const phoneToken = await verifyPhone(c.user.phone, 'reset_pin');
+    const reset = await api('POST', '/auth/reset-pin', null, { phoneToken, pin: '9999' });
+    assert.equal(reset.status, 200);
+    assert.equal((await api('POST', '/auth/login', null, { phone: c.user.phone, pin: '4321' })).status, 401);
+    assert.equal((await api('POST', '/auth/login', null, { phone: c.user.phone, pin: '9999' })).status, 200);
+  });
+
+  test('push tokens must look like Expo tokens', async () => {
+    const c = await login('0971111111');
+    assert.equal((await api('POST', '/auth/push-token', c.token, { token: 'abc' })).status, 400);
   });
 
   test('customers cannot use worker or admin endpoints', async () => {
@@ -140,6 +241,9 @@ describe('booking', () => {
     const grace = await login('0972222222');
     const customerSocket = await socketFor(customer.token);
     const marySocket = await socketFor(mary.token);
+    await api('POST', '/auth/push-token', mary.token, { token: 'ExponentPushToken[mary]', platform: 'android' });
+    await api('POST', '/auth/push-token', customer.token, { token: 'ExponentPushToken[customer]', platform: 'android' });
+    sentPushes.length = 0;
     const graceSocket = await socketFor(grace.token);
 
     const maryOffer = waitFor(marySocket, 'job:offer');
@@ -178,6 +282,12 @@ describe('booking', () => {
 
     assert.equal((await api('POST', `/jobs/${job.id}/accept`, grace.token)).status, 409);
 
+    // Phone notifications: Mary heard about the job, the customer heard Mary accepted.
+    assert.ok(sentPushes.some((p) => p.to === 'ExponentPushToken[mary]' && p.title === 'Urgent job nearby'));
+    const acceptedPush = sentPushes.find((p) => p.to === 'ExponentPushToken[customer]');
+    assert.equal(acceptedPush.title, 'Mary accepted your booking');
+    assert.equal(acceptedPush.data.url, `/job/${job.id}`);
+
     // Live location reaches the customer.
     await api('POST', `/jobs/${job.id}/en-route`, mary.token);
     const loc = waitFor(customerSocket, 'worker:location');
@@ -200,6 +310,7 @@ describe('booking', () => {
     assert.equal(pay.body.job.paymentStatus, 'pending');
     assert.equal(pay.body.job.payment.provider, 'mtn');
     await paid;
+    assert.ok(sentPushes.some((p) => p.to === 'ExponentPushToken[mary]' && p.title === 'Payment received'));
 
     // Rate Mary: her average moves from 4.8 (23 ratings) toward 5.
     const rated = await api('POST', `/jobs/${job.id}/rate`, customer.token, { stars: 5, comment: 'Excellent' });

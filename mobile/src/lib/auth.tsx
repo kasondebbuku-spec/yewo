@@ -4,6 +4,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useEffect
 import { io, Socket } from 'socket.io-client';
 import { api, setApiToken } from './api';
 import { API_URL } from './config';
+import { registerForPush, unregisterPush } from './push';
 import type { User } from './types';
 
 const TOKEN_KEY = 'yewo.token';
@@ -14,6 +15,7 @@ type AuthState = {
   socket: Socket | null;
   login: (phone: string, pin: string) => Promise<User>;
   register: (data: Record<string, unknown>) => Promise<User>;
+  resetPin: (phoneToken: string, pin: string) => Promise<User>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -81,7 +83,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [startSession]
   );
 
+  const resetPin = useCallback(
+    async (phoneToken: string, pin: string) => {
+      const r = await api<{ token: string; user: User }>('/auth/reset-pin', { method: 'POST', body: { phoneToken, pin } });
+      return startSession(r.token, r.user);
+    },
+    [startSession]
+  );
+
+  // Once logged in, register this phone for push notifications (no-op in Expo Go and on web).
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    registerForPush().catch((e) => console.warn('Push registration failed:', e?.message));
+  }, [userId]);
+
   const logout = useCallback(async () => {
+    await unregisterPush();
     setApiToken(null);
     await AsyncStorage.removeItem(TOKEN_KEY);
     setToken(null);
@@ -94,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ready, user, socket, login, register, logout, refresh }}>
+    <AuthContext.Provider value={{ ready, user, socket, login, register, resetPin, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

@@ -10,6 +10,7 @@ import { getDb, now } from './db.js';
 import { distanceKm } from './geo.js';
 import { ACTIVE_STATUSES, loadJob, notifyJob, offerView } from './jobs.js';
 import { emitToUser } from './realtime.js';
+import { pushToUser } from './push.js';
 
 const timers = new Map(); // jobId -> timeout handle
 
@@ -69,7 +70,13 @@ function runWave(jobId) {
   for (const c of picks) {
     const offer = { distance_km: c.distance_km, offered_at: now() };
     insert.run(jobId, c.user_id, wave, c.distance_km, offer.offered_at);
-    emitToUser(c.user_id, 'job:offer', offerView(job, offer));
+    const view = offerView(job, offer);
+    emitToUser(c.user_id, 'job:offer', view);
+    pushToUser(c.user_id, {
+      title: job.urgent ? 'Urgent job nearby' : 'New job nearby',
+      body: `${view.service.name} in ${view.zone.name}, ${view.distanceKm} km away. You earn K${view.workerPayout}.`,
+      data: { url: '/worker' },
+    });
   }
 
   schedule(jobId);
@@ -97,7 +104,7 @@ function markNoWorkers(jobId) {
   const res = getDb()
     .prepare("UPDATE jobs SET status = 'no_workers' WHERE id = ? AND status = 'searching'")
     .run(jobId);
-  if (res.changes) notifyJob(jobId);
+  if (res.changes) notifyJob(jobId, 'no_workers');
 }
 
 // Withdraw any offers still waiting for an answer and tell those workers.

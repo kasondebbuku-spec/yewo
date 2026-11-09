@@ -21,6 +21,8 @@ export function requireAuth(...roles) {
     } catch {
       throw unauthorized('Your session has expired, please log in again');
     }
+    // Only login tokens count here (not SMS phone tokens or file links).
+    if (payload.typ || !payload.sub) throw unauthorized();
 
     const user = getDb()
       .prepare('SELECT id, role, name, phone FROM users WHERE id = ?')

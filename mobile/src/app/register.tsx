@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
-import { Button, Card, Chip, ErrorText, Field, H2, Muted, Row, Screen } from '@/components/ui';
+import { Badge, Button, Card, Chip, ErrorText, Field, H1, H2, Muted, Row, Screen } from '@/components/ui';
+import { PhoneVerify } from '@/components/PhoneVerify';
 import { useAuth } from '@/lib/auth';
 import { api, errorMessage } from '@/lib/api';
 import type { Agency, Service } from '@/lib/types';
 
 export default function Register() {
   const { register } = useAuth();
+  const [verified, setVerified] = useState<{ phone: string; phoneToken: string } | null>(null);
   const [role, setRole] = useState<'customer' | 'worker'>('customer');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [nrc, setNrc] = useState('');
   const [agencyId, setAgencyId] = useState<number | null>(null);
@@ -27,15 +28,23 @@ export default function Register() {
   const toggleSkill = (id: number) =>
     setSkills((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  // Step 1: confirm the phone number by SMS.
+  if (!verified) {
+    return (
+      <Screen>
+        <H1>Create your account</H1>
+        <Muted>First, let’s confirm your phone number. Your MTN or Airtel number works best for Mobile Money.</Muted>
+        <PhoneVerify purpose="register" onVerified={(phone, phoneToken) => setVerified({ phone, phoneToken })} />
+      </Screen>
+    );
+  }
+
   async function submit() {
     setError('');
     setLoading(true);
     try {
-      await register(
-        role === 'worker'
-          ? { role, name, phone, pin, nrc, agencyId, skills }
-          : { role, name, phone, pin }
-      );
+      const base = { role, name, pin, phoneToken: verified!.phoneToken };
+      await register(role === 'worker' ? { ...base, nrc, agencyId, skills } : base);
       router.replace('/');
     } catch (e) {
       setError(errorMessage(e));
@@ -44,15 +53,16 @@ export default function Register() {
     }
   }
 
+  // Step 2: the rest of the details.
   return (
     <Screen>
+      <Badge tone="success" label={`✓ ${verified.phone} confirmed`} />
       <Row>
         <Chip label="I need help at home" selected={role === 'customer'} onPress={() => setRole('customer')} />
         <Chip label="I'm a worker" selected={role === 'worker'} onPress={() => setRole('worker')} />
       </Row>
 
       <Field label="Full name" value={name} onChangeText={setName} placeholder="e.g. Chanda Mwila" />
-      <Field label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="097 123 4567" hint="Your MTN or Airtel number works best for Mobile Money." />
       <Field label="Choose a PIN" value={pin} onChangeText={setPin} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="4–6 digits" />
 
       {role === 'worker' && (
@@ -61,6 +71,7 @@ export default function Register() {
             <H2>Verification</H2>
             <Muted>
               Every Yewo worker is checked against their NRC and registered agency before they can take jobs.
+              After signing up you’ll photograph your NRC and take a selfie.
             </Muted>
           </Card>
           <Field label="NRC number" value={nrc} onChangeText={setNrc} placeholder="123456/78/1" autoCapitalize="none" />
@@ -82,7 +93,7 @@ export default function Register() {
       )}
 
       <ErrorText>{error}</ErrorText>
-      <Button title="Create account" onPress={submit} loading={loading} disabled={!name || !phone || !pin} />
+      <Button title="Create account" onPress={submit} loading={loading} disabled={!name || !pin} />
     </Screen>
   );
 }

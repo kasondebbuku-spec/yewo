@@ -82,7 +82,10 @@ and Roma are listed as "coming soon". Edit them in [`backend/src/seed.js`](backe
 [`backend/src/config.js`](backend/src/config.js).
 
 **Trust and safety.**
-- Workers register with an NRC (format `123456/78/1`) and their agency. They can't go online until an admin approves them.
+- Every phone number is confirmed with a 6-digit SMS code at sign-up. Forgot your PIN? Reset it with an SMS code.
+- Workers register with an NRC (format `123456/78/1`) and their agency, then photograph the NRC (front and back) and take a selfie.
+  An admin compares them and approves or rejects with a reason. Workers can't go online until approved.
+- NRC photos are stored privately on the server and only shown through links that expire after 15 minutes.
 - Customers see the worker's name, agency, masked NRC, rating and jobs done, and can call the worker or the agency.
 - Workers don't see the exact address or customer phone until they accept.
 - Check-in only works within 300 m of the address, and the distance is saved.
@@ -91,13 +94,47 @@ and Roma are listed as "coming soon". Edit them in [`backend/src/seed.js`](backe
 **Money.** Price + optional K30 urgency fee. Yewo keeps 15%; the worker sees their payout
 before accepting. The admin screen shows paid bookings value, commission and average time to accept.
 
+## SMS, NRC photos and push notifications
+
+**SMS codes.** In development, codes are printed in the API terminal and shown in the app
+("Development: the code is …"), so no SMS is sent. To send real SMS in Zambia, create an
+[Africa's Talking](https://africastalking.com) account and start the API with:
+
+```bash
+SMS_PROVIDER=africastalking AT_USERNAME=your_username AT_API_KEY=your_key npm run dev
+```
+
+Use `AT_USERNAME=sandbox` with your sandbox key to test with their simulator first. Limits: one code
+per minute and five per hour for each number; a code expires after 10 minutes or 5 wrong tries.
+
+**NRC photos.** Saved in `backend/uploads/` (not in git). Only JPG, PNG, WEBP or HEIC up to 5 MB are
+accepted, and the file type is checked from the image itself.
+
+**Push notifications.** The API sends them through Expo's free push service when:
+a worker gets a job offer; the customer's worker accepts, is on the way, arrives, or finishes;
+nobody was free; a booking is cancelled; a payment arrives; or an admin approves or rejects a worker.
+Tapping a notification opens that booking.
+
+They **don't work in Expo Go** on Android (Expo removed that in SDK 53), so you need a development build:
+
+```bash
+cd mobile
+npx eas-cli@latest login          # free Expo account
+npx eas-cli@latest init           # adds the project id push needs
+npx eas-cli@latest build --profile development --platform android
+```
+
+Install the APK it gives you, then run `npx expo start` as usual. Everything else keeps working in Expo Go;
+the app just updates live while it's open instead of sending notifications.
+
 ## Status
 
 | Done | Not yet |
 |------|---------|
-| Sign-up/login (phone + PIN) for customers and workers | SMS OTP to confirm phone numbers |
-| Worker NRC + agency verification by admin | NRC photo upload |
-| Zone detection, wave dispatch, accept/decline/drop job | Push notifications when the app is closed |
+| Sign-up/login (phone + PIN), SMS code check, Forgot PIN | Real SMS needs an Africa's Talking account |
+| NRC front/back + selfie upload, admin photo review | Automatic NRC/face matching |
+| Zone detection, wave dispatch, accept/decline/drop job | |
+| Push notifications for offers, job updates, payments | Needs an EAS development build to receive |
 | Live worker location, ETA and maps | Turn-by-turn route on the map |
 | GPS check-in/check-out | Scheduled (later-today) bookings |
 | Mobile Money flow (**mocked**) | Real MTN MoMo / Airtel Money APIs |
@@ -112,6 +149,6 @@ a callback) already matches how both providers work.
 ## Tests
 
 ```bash
-cd backend && npm test     # 11 end-to-end tests: full booking loop, dispatch waves, payments, verification
-cd mobile && npm run typecheck
+cd backend && npm test     # 14 end-to-end tests: booking loop, dispatch, payments, SMS codes, NRC photos, push
+cd mobile && npm run typecheck && npx eslint src
 ```

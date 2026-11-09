@@ -4,6 +4,9 @@ import { getDb, now } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { badRequest, notFound } from '../errors.js';
 import { workerProfile } from '../jobs.js';
+import { hasAllDocuments, listDocuments } from '../documents.js';
+import { pushToUser } from '../push.js';
+import { baseUrl } from './workers.js';
 
 const router = Router();
 router.use(requireAuth('admin'));
@@ -13,13 +16,22 @@ router.get('/workers', (req, res) => {
   const rows = getDb()
     .prepare(`SELECT user_id FROM workers ${status ? 'WHERE verification_status = ?' : ''} ORDER BY user_id DESC`)
     .all(...(status ? [status] : []));
-  res.json({ workers: rows.map((r) => workerProfile(r.user_id, { fullNrc: true })) });
+  res.json({
+    workers: rows.map((r) => ({
+      ...workerProfile(r.user_id, { fullNrc: true }),
+      documents: listDocuments(r.user_id, baseUrl(req)),
+    })),
+  });
 });
 
 router.post('/workers/:id/verify', (req, res) => {
   const decision = req.body.decision;
   if (!['verified', 'rejected'].includes(decision)) throw badRequest('decision must be verified or rejected');
   const note = req.body.note ? String(req.body.note).slice(0, 300) : null;
+  const workerId = Number(req.params.id);
+  if (decision === 'verified' && !hasAllDocuments(workerId)) {
+    throw badRequest("This worker hasn't uploaded their NRC (front and back) and selfie yet.");
+  }
 
   const result = getDb()
     .prepare(
@@ -27,10 +39,14 @@ router.post('/workers/:id/verify', (req, res) => {
               is_online = CASE WHEN ? = 'rejected' THEN 0 ELSE is_online END
         WHERE user_id = ?`
     )
-    .run(decision, note, decision === 'verified' ? now() : null, decision, Number(req.params.id));
+    .run(decision, note, decision === 'verified' ? now() : null, decision, workerId);
   if (!result.changes) throw notFound('Worker not found');
 
-  res.json({ worker: workerProfile(Number(req.params.id), { fullNrc: true }) });
+  pushToUser(workerId, decision === 'verified'
+    ? { title: "You're verified on Yewo", body: 'Go online to start receiving jobs near you.', data: { url: '/worker' } }
+    : { title: 'Verification not approved', body: note || 'Please check your NRC photos and upload them again.', data: { url: '/worker' } });
+
+  res.json({ worker: workerProfile(workerId, { fullNrc: true }) });
 });
 
 router.get('/stats', (_req, res) => {

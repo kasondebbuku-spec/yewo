@@ -2,6 +2,7 @@
 import { getDb } from './db.js';
 import { distanceKm, etaMinutes } from './geo.js';
 import { emitToUser } from './realtime.js';
+import { pushToUser } from './push.js';
 import { maskNrc } from './validation.js';
 import { forbidden, notFound } from './errors.js';
 
@@ -25,7 +26,7 @@ export function loadJobFor(id, user) {
 export function workerProfile(workerId, { fullNrc = false } = {}) {
   const w = getDb()
     .prepare(
-      `SELECT u.id, u.name, u.phone, w.nrc, w.verification_status, w.rating_avg, w.rating_count,
+      `SELECT u.id, u.name, u.phone, w.nrc, w.verification_status, w.verification_note, w.rating_avg, w.rating_count,
               w.jobs_completed, w.lat, w.lng, w.location_at, w.is_online, w.skills,
               a.id AS agency_id, a.name AS agency_name, a.phone AS agency_phone
          FROM users u
@@ -42,6 +43,7 @@ export function workerProfile(workerId, { fullNrc = false } = {}) {
     nrc: fullNrc ? w.nrc : maskNrc(w.nrc),
     verificationStatus: w.verification_status,
     verified: w.verification_status === 'verified',
+    verificationNote: w.verification_note,
     agency: { id: w.agency_id, name: w.agency_name, phone: w.agency_phone },
     rating: Math.round(w.rating_avg * 10) / 10,
     ratingCount: w.rating_count,
@@ -119,11 +121,32 @@ export function offerView(job, offer) {
   };
 }
 
-// Push the latest job state to both people on it.
-export function notifyJob(jobId) {
+// Phone notifications for the moments that matter. Each returns who gets it and what it says.
+const JOB_PUSHES = {
+  accepted: (j, w) => ({ to: 'customer', title: `${w} accepted your booking`, body: `${j.service.name}: ${w} is getting ready.` }),
+  en_route: (j, w) => ({ to: 'customer', title: `${w} is on the way`, body: 'Open Yewo to follow them live.' }),
+  checked_in: (j, w) => ({ to: 'customer', title: `${w} has arrived`, body: 'They checked in at your address.' }),
+  completed: (j, w) => ({ to: 'customer', title: 'Job finished', body: `Pay K${j.total} with Mobile Money and rate ${w}.` }),
+  no_workers: () => ({ to: 'customer', title: 'No one was free just now', body: 'Open Yewo to try again.' }),
+  released: () => ({ to: 'customer', title: 'Finding you another worker', body: "Your worker can't make it. We're looking for someone else nearby." }),
+  cancelled: (j) => ({ to: 'worker', title: 'Booking cancelled', body: `The customer cancelled the ${j.service.name} job.` }),
+  paid: (j) => ({ to: 'worker', title: 'Payment received', body: `Customer paid K${j.total}. You earn K${j.workerPayout}.` }),
+};
+
+// Push the latest job state to both people on it. `event` (optional) also sends a phone notification.
+export function notifyJob(jobId, event) {
   const job = loadJob(jobId);
-  emitToUser(job.customer_id, 'job:update', jobView(job, { role: 'customer' }));
+  const forCustomer = jobView(job, { role: 'customer' });
+  emitToUser(job.customer_id, 'job:update', forCustomer);
   if (job.worker_id) emitToUser(job.worker_id, 'job:update', jobView(job, { role: 'worker' }));
+
+  const make = JOB_PUSHES[event];
+  if (!make) return;
+  const view = jobView(job, { role: 'worker' });
+  const workerName = view.worker?.name.split(' ')[0] ?? 'Your worker';
+  const msg = make(view, workerName);
+  const userId = msg.to === 'customer' ? job.customer_id : job.worker_id;
+  if (userId) pushToUser(userId, { title: msg.title, body: msg.body, data: { url: `/job/${job.id}` } });
 }
 
 export const round1 = (n) => Math.round(n * 10) / 10;

@@ -7,6 +7,7 @@ import { LogoutButton } from '@/components/LogoutButton';
 import { useAuth, useSocketEvent } from '@/lib/auth';
 import { api, errorMessage } from '@/lib/api';
 import { DemoToggle } from '@/components/DemoToggle';
+import { DocumentUploader } from '@/components/DocumentUploader';
 import { DEMO_POINTS } from '@/lib/config';
 import { useDemo } from '@/lib/demo';
 import { getCurrentPoint, watchPoint } from '@/lib/location';
@@ -93,16 +94,23 @@ export default function WorkerHome() {
 
       {worker.verificationStatus === 'pending' && (
         <Card style={{ backgroundColor: colors.warnSoft, borderColor: '#FDE68A' }}>
-          <H2>Verification in progress</H2>
+          <H2>Get verified to start working</H2>
           <Muted>
-            We’re checking your NRC with {worker.agency.name}. You can go online and receive jobs once you’re verified.
+            Upload clear photos of your NRC and a selfie. We check them with {worker.agency.name}, then you can go
+            online and receive jobs.
           </Muted>
         </Card>
       )}
       {worker.verificationStatus === 'rejected' && (
         <Card style={{ backgroundColor: colors.dangerSoft, borderColor: '#FECACA' }}>
           <H2>We couldn’t verify you</H2>
-          <Muted>Please contact {worker.agency.name} or Yewo support.</Muted>
+          <Muted>{worker.verificationNote || 'Your photos could not be approved.'}</Muted>
+          <Muted>Upload new photos below to be checked again, or contact {worker.agency.name}.</Muted>
+        </Card>
+      )}
+      {!worker.verified && (
+        <Card>
+          <DocumentUploader />
         </Card>
       )}
 

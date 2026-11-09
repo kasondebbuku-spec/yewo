@@ -126,7 +126,7 @@ router.post('/:id/accept', (req, res) => {
   });
 
   stopDispatch(jobId);
-  notifyJob(jobId);
+  notifyJob(jobId, 'accepted');
   respond(res, jobId, req.user);
 });
 
@@ -149,7 +149,7 @@ router.post('/:id/release', (req, res) => {
     });
     db.prepare("UPDATE job_offers SET status = 'declined' WHERE job_id = ? AND worker_id = ?").run(job.id, req.user.id);
   });
-  notifyJob(job.id);
+  notifyJob(job.id, 'released');
   redispatch(job.id);
   res.json({ ok: true });
 });
@@ -158,7 +158,7 @@ router.post('/:id/release', (req, res) => {
 router.post('/:id/en-route', (req, res) => {
   const job = requireAssignedWorker(req);
   setStatus(job.id, ['accepted'], 'en_route', { en_route_at: now() });
-  notifyJob(job.id);
+  notifyJob(job.id, 'en_route');
   respond(res, job.id, req.user);
 });
 
@@ -172,7 +172,7 @@ router.post('/:id/check-in', (req, res) => {
   setStatus(job.id, ['accepted', 'en_route'], 'in_progress', {
     checked_in_at: now(), check_in_distance_m: meters,
   });
-  notifyJob(job.id);
+  notifyJob(job.id, 'checked_in');
   respond(res, job.id, req.user);
 });
 
@@ -182,7 +182,7 @@ router.post('/:id/check-out', (req, res) => {
     setStatus(job.id, ['in_progress'], 'completed', { completed_at: now() });
     db.prepare('UPDATE workers SET jobs_completed = jobs_completed + 1 WHERE user_id = ?').run(req.user.id);
   });
-  notifyJob(job.id);
+  notifyJob(job.id, 'completed');
   respond(res, job.id, req.user);
 });
 
@@ -195,7 +195,7 @@ router.post('/:id/cancel', (req, res) => {
     cancelled_at: now(), cancel_reason: reason,
   });
   stopDispatch(job.id);
-  notifyJob(job.id);
+  notifyJob(job.id, 'cancelled');
   respond(res, job.id, req.user);
 });
 

@@ -52,6 +52,7 @@ export default function Welcome() {
       <Field label="PIN" placeholder="4–6 digits" keyboardType="number-pad" secureTextEntry maxLength={6} value={pin} onChangeText={setPin} />
       <ErrorText>{error}</ErrorText>
       <Button title="Log in" onPress={submit} loading={loading} disabled={!phone || !pin} />
+      <Button title="Forgot your PIN?" variant="ghost" onPress={() => router.push('/forgot-pin')} />
       <Button title="New to Yewo? Create an account" variant="ghost" onPress={() => router.push('/register')} />
 
       {__DEV__ && (

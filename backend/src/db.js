@@ -118,6 +118,40 @@ CREATE TABLE IF NOT EXISTS ratings (
   PRIMARY KEY (job_id, from_user)
 );
 
+-- One-time SMS codes (only a hash of the code is stored)
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id          INTEGER PRIMARY KEY,
+  phone       TEXT NOT NULL,
+  purpose     TEXT NOT NULL CHECK (purpose IN ('register','reset_pin')),
+  code_hash   TEXT NOT NULL,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  expires_at  TEXT NOT NULL,
+  used_at     TEXT,
+  created_at  TEXT NOT NULL
+);
+
+-- NRC front, NRC back and a selfie for each worker
+CREATE TABLE IF NOT EXISTS worker_documents (
+  id          INTEGER PRIMARY KEY,
+  worker_id   INTEGER NOT NULL REFERENCES users(id),
+  kind        TEXT NOT NULL CHECK (kind IN ('nrc_front','nrc_back','selfie')),
+  filename    TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  created_at  TEXT NOT NULL,
+  UNIQUE (worker_id, kind)
+);
+
+-- Expo push tokens (one person can have several phones)
+CREATE TABLE IF NOT EXISTS push_tokens (
+  token       TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id),
+  platform    TEXT,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_phone ON otp_codes(phone, purpose);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_customer ON jobs(customer_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_worker   ON jobs(worker_id);
 CREATE INDEX IF NOT EXISTS idx_offers_worker ON job_offers(worker_id, status);

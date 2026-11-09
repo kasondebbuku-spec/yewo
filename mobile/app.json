@@ -32,6 +32,21 @@
         {
           "locationWhenInUsePermission": "Yewo uses your location to find verified workers near you and to confirm job check-ins."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Yewo needs your photos so workers can upload their NRC for verification.",
+          "cameraPermission": "Yewo uses the camera so workers can photograph their NRC and take a selfie for verification.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F766E",
+          "defaultChannel": "jobs"
+        }
       ]
     ],
     "scheme": "yewo"
